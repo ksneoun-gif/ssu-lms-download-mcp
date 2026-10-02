@@ -5,6 +5,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 import zipfile
 import xml.etree.ElementTree as ET
@@ -18,7 +19,7 @@ from mcp.server.fastmcp import FastMCP
 APP_DIR = Path.home() / "Library/Application Support/ssu-lms-download-mcp"
 STATE = APP_DIR / "session.json"
 LOGIN_PID = APP_DIR / "login.pid"
-DOWNLOADS = Path.home() / "Downloads/숭실대 LMS"
+STAGING = APP_DIR / "staging"
 ALLOWED_HOSTS = {"canvas.ssu.ac.kr", "commons.ssu.ac.kr"}
 COOKIE_DOMAINS = ALLOWED_HOSTS | {"ssu.ac.kr"}
 MAX_BYTES = 100 * 1024 * 1024
@@ -36,9 +37,7 @@ def session() -> requests.Session:
     data = json.loads(STATE.read_text())
     token = next((c for c in data["cookies"] if c["name"] == "xn_api_token"), None)
     expires = token.get("expires", -1) if token else 0
-    if expires <= 0:
-        expires = data.get("captured_at", 0) + 7200
-    if not token or expires <= time.time():
+    if not token or (expires > 0 and expires <= time.time()):
         raise RuntimeError("LMS 로그인이 만료되었습니다. start_login을 호출하세요.")
     client = requests.Session()
     for cookie in data["cookies"]:
@@ -132,8 +131,8 @@ def list_materials(course_id: int) -> list[dict]:
 
 
 @mcp.tool()
-def download_material(course_id: int, content_id: str, week: str = "") -> dict:
-    """Download one listed weekly course file to ~/Downloads/숭실대 LMS/COURSE/WEEK/."""
+def stage_material(course_id: int, content_id: str, week: str = "") -> dict:
+    """Stage one LMS file temporarily. Upload its path to Google Drive, then call delete_staged_material."""
     if course_id <= 0 or not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", content_id):
         raise ValueError("Invalid course_id or content_id")
     client = session()
@@ -155,14 +154,13 @@ def download_material(course_id: int, content_id: str, week: str = "") -> dict:
         file_url = urljoin("https://commons.ssu.ac.kr/", uri.replace("&amp;", "&"))
     if not trusted(file_url):
         raise RuntimeError("LMS가 허용되지 않은 다운로드 주소를 반환했습니다.")
-    safe = lambda value: re.sub(r"[\\/:*?\"<>|\x00-\x1f]", "_", value).strip(" .")[:150] or "unknown"
-    folder = DOWNLOADS / str(course_id) / safe(selected["week"])
-    folder.mkdir(mode=0o700, parents=True, exist_ok=True)
-    target = folder / safe(selected["filename"])
-    temporary = target.with_name(target.name + ".part")
+    STAGING.mkdir(mode=0o700, parents=True, exist_ok=True)
+    safe_name = re.sub(r"[\\/:*?\"<>|\x00-\x1f]", "_", selected["filename"]).strip(" .")[:150] or "file"
+    descriptor, path = tempfile.mkstemp(prefix="lms-", suffix=Path(safe_name).suffix, dir=STAGING)
+    temporary = Path(path)
     size = 0
     try:
-        with get(client, file_url, stream=True) as response, temporary.open("wb") as output:
+        with os.fdopen(descriptor, "wb") as output, get(client, file_url, stream=True) as response:
             if int(response.headers.get("Content-Length", "0")) > MAX_BYTES:
                 raise RuntimeError("파일이 100MB 제한을 초과합니다.")
             for chunk in response.iter_content(1024 * 1024):
@@ -172,16 +170,26 @@ def download_material(course_id: int, content_id: str, week: str = "") -> dict:
                 output.write(chunk)
         if size == 0:
             raise RuntimeError("빈 파일을 받았습니다.")
-        if target.suffix.lower() == ".pdf":
+        if temporary.suffix.lower() == ".pdf":
             with temporary.open("rb") as pdf:
                 if pdf.read(5) != b"%PDF-":
                     raise RuntimeError("LMS가 유효한 PDF를 반환하지 않았습니다.")
-        elif target.suffix.lower() in {".zip", ".pptx"} and not zipfile.is_zipfile(temporary):
+        elif temporary.suffix.lower() in {".zip", ".pptx"} and not zipfile.is_zipfile(temporary):
             raise RuntimeError("LMS가 유효한 ZIP/PPTX를 반환하지 않았습니다.")
-        temporary.replace(target)
-    finally:
+    except BaseException:
         temporary.unlink(missing_ok=True)
-    return {"path": str(target), "bytes": size, "week": selected["week"]}
+        raise
+    return {"path": str(temporary), "staging_id": temporary.name, "filename": safe_name,
+            "bytes": size, "week": selected["week"]}
+
+
+@mcp.tool()
+def delete_staged_material(staging_id: str) -> dict:
+    """Delete a staged LMS file after Google Drive confirms the upload."""
+    if not re.fullmatch(r"lms-[A-Za-z0-9_]{8}(?:\.[A-Za-z0-9]{1,10})?", staging_id):
+        raise ValueError("Invalid staging_id")
+    (STAGING / staging_id).unlink(missing_ok=True)
+    return {"deleted": True}
 
 
 if __name__ == "__main__":
