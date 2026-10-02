@@ -1,0 +1,20 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "ssu-lms-download",
+  "version": "0.1.0",
+  "description": "Download weekly course materials from Soongsil LMS with local browser authentication.",
+  "author": {"name": "ksneoun-gif"},
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "숭실대 LMS 다운로드",
+        "shortDescription": "주차별 강의자료 다운로드",
+        "longDescription": "브라우저에서 숭실대 LMS에 로그인한 뒤 공개된 주차별 자료를 Mac에 다운로드합니다.",
+        "developerName": "ksneoun-gif",
+        "category": "Education",
+        "capabilities": ["Tools"],
+        "defaultPrompt": "내 LMS 과목의 주차별 강의자료를 확인하고 다운로드해줘."
+      }
+    }
+  }
+}
