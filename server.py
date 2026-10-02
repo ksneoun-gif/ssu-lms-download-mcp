@@ -131,12 +131,13 @@ def list_materials(course_id: int) -> list[dict]:
 
 
 @mcp.tool()
-def download_material(course_id: int, content_id: str) -> dict:
+def download_material(course_id: int, content_id: str, week: str = "") -> dict:
     """Download one listed weekly course file to ~/Downloads/숭실대 LMS/COURSE/WEEK/."""
     if course_id <= 0 or not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", content_id):
         raise ValueError("Invalid course_id or content_id")
     client = session()
-    selected = next((item for item in materials(client, course_id) if item["content_id"] == content_id), None)
+    selected = next((item for item in materials(client, course_id)
+                     if item["content_id"] == content_id and (not week or item["week"] == week)), None)
     if selected is None:
         raise ValueError("이 과목의 공개된 자료 ID가 아닙니다.")
     info_url = "https://commons.ssu.ac.kr/viewer/ssplayer/uniplayer_support/content.php?content_id=" + quote(content_id)
