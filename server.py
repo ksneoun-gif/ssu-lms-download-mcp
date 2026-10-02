@@ -166,6 +166,10 @@ def download_material(course_id: int, content_id: str) -> dict:
                 output.write(chunk)
         if size == 0:
             raise RuntimeError("빈 파일을 받았습니다.")
+        if target.suffix.lower() == ".pdf":
+            with temporary.open("rb") as pdf:
+                if pdf.read(5) != b"%PDF-":
+                    raise RuntimeError("LMS가 유효한 PDF를 반환하지 않았습니다.")
         temporary.replace(target)
     finally:
         temporary.unlink(missing_ok=True)
