@@ -6,6 +6,7 @@ import re
 import subprocess
 import sys
 import time
+import zipfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from urllib.parse import quote, urljoin, urlparse
@@ -140,14 +141,18 @@ def download_material(course_id: int, content_id: str, week: str = "") -> dict:
                      if item["content_id"] == content_id and (not week or item["week"] == week)), None)
     if selected is None:
         raise ValueError("이 과목의 공개된 자료 ID가 아닙니다.")
-    info_url = "https://commons.ssu.ac.kr/viewer/ssplayer/uniplayer_support/content.php?content_id=" + quote(content_id)
-    xml = get(client, info_url).text
-    if "<!DOCTYPE" in xml.upper() or "<!ENTITY" in xml.upper():
-        raise RuntimeError("LMS 자료 정보 XML이 안전하지 않습니다.")
-    uri = ET.fromstring(xml).findtext(".//content_download_uri")
-    if not uri:
-        raise RuntimeError("LMS가 다운로드 주소를 제공하지 않았습니다.")
-    file_url = urljoin("https://commons.ssu.ac.kr/", uri.replace("&amp;", "&"))
+    if Path(selected["filename"]).suffix.lower() in {".zip", ".pptx"}:
+        file_url = ("https://commons.ssu.ac.kr/index.php?module=xn_media_content2013"
+                    "&act=dispXn_media_content2013DownloadContent&content_id=" + quote(content_id))
+    else:
+        info_url = "https://commons.ssu.ac.kr/viewer/ssplayer/uniplayer_support/content.php?content_id=" + quote(content_id)
+        xml = get(client, info_url).text
+        if "<!DOCTYPE" in xml.upper() or "<!ENTITY" in xml.upper():
+            raise RuntimeError("LMS 자료 정보 XML이 안전하지 않습니다.")
+        uri = ET.fromstring(xml).findtext(".//content_download_uri")
+        if not uri:
+            raise RuntimeError("LMS가 다운로드 주소를 제공하지 않았습니다.")
+        file_url = urljoin("https://commons.ssu.ac.kr/", uri.replace("&amp;", "&"))
     if not trusted(file_url):
         raise RuntimeError("LMS가 허용되지 않은 다운로드 주소를 반환했습니다.")
     safe = lambda value: re.sub(r"[\\/:*?\"<>|\x00-\x1f]", "_", value).strip(" .")[:150] or "unknown"
@@ -171,6 +176,8 @@ def download_material(course_id: int, content_id: str, week: str = "") -> dict:
             with temporary.open("rb") as pdf:
                 if pdf.read(5) != b"%PDF-":
                     raise RuntimeError("LMS가 유효한 PDF를 반환하지 않았습니다.")
+        elif target.suffix.lower() in {".zip", ".pptx"} and not zipfile.is_zipfile(temporary):
+            raise RuntimeError("LMS가 유효한 ZIP/PPTX를 반환하지 않았습니다.")
         temporary.replace(target)
     finally:
         temporary.unlink(missing_ok=True)
