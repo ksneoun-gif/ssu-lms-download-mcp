@@ -39,3 +39,37 @@ if __name__ == "__main__":
     test_download_origin_allowlist()
     test_session_cookie_does_not_expire_locally()
     test_staged_file_cleanup_is_confined()
+
+
+def test_transcript_id_confined():
+    from lecture import job_path
+    for bad in ('../session', '/tmp/x', 'x?token=secret'):
+        try:
+            job_path(bad)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError('transcript path traversal accepted')
+
+
+def test_live_auth_rejects_stale_cookie():
+    from server import auth_status
+    with patch('server.list_courses', side_effect=RuntimeError('expired')):
+        assert auth_status()['authenticated'] is False
+
+
+test_transcript_id_confined()
+test_live_auth_rejects_stale_cookie()
+
+def test_media_origins():
+    from lecture import trusted_media
+    assert trusted_media('https://ssuin-object.commonscdn.com/ssu-contents/contents/x.mp4')
+    assert trusted_media('https://ssu-toast.commonscdn.com/contents31/ssu1000001/x.mp4')
+    for url in ('http://ssu-toast.commonscdn.com/contents31/ssu1000001/x.mp4',
+                'https://ssu-toast.commonscdn.com.evil.test/contents31/ssu1000001/x.mp4',
+                'https://user@ssu-toast.commonscdn.com/contents31/ssu1000001/x.mp4',
+                'https://ssu-toast.commonscdn.com:8443/contents31/ssu1000001/x.mp4',
+                'https://ssu-toast.commonscdn.com/other/x.mp4'):
+        assert not trusted_media(url)
+
+test_media_origins()

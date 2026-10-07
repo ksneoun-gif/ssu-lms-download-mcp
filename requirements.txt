@@ -1,3 +1,5 @@
 mcp>=1.0,<2
 playwright>=1.50,<2
 requests>=2.32,<3
+faster-whisper>=1.1,<2
+av>=11,<19

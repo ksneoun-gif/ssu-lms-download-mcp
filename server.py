@@ -106,10 +106,14 @@ def start_login() -> dict:
 def auth_status() -> dict:
     """Check whether a usable LMS browser session was captured locally."""
     try:
-        session()
-        return {"authenticated": True}
+        list_courses()
+        return {"authenticated": True, "verified_live": True}
+    except requests.RequestException:
+        return {"authenticated": None, "verified_live": False,
+                "message": "학교 API 요청이 실패했습니다. 네트워크와 로그인 상태를 확인하세요."}
     except (OSError, ValueError, KeyError, RuntimeError):
-        return {"authenticated": False, "message": "start_login으로 LMS에 로그인하세요."}
+        return {"authenticated": False, "verified_live": False,
+                "message": "start_login으로 LMS에 로그인하세요."}
 
 
 @mcp.tool()
@@ -190,6 +194,43 @@ def delete_staged_material(staging_id: str) -> dict:
         raise ValueError("Invalid staging_id")
     (STAGING / staging_id).unlink(missing_ok=True)
     return {"deleted": True}
+
+
+@mcp.tool()
+def lecture_transcript(content_id: str, start_if_missing: bool = True) -> dict:
+    """Start local video transcription or read its status and timestamped transcript. No attendance writes."""
+    from lecture import job_path, save
+    path = job_path(content_id)
+    if path.exists():
+        result = json.loads(path.read_text())
+        if result.get("status") != "processing":
+            return result
+        # Worker progress files omit pid; use the separate pid file.
+        pid_file = path.with_suffix(".pid")
+        try:
+            os.kill(int(pid_file.read_text()), 0)
+        except (OSError, ValueError):
+            return {"status":"failed", "error":"전사 작업이 중단되었습니다. retry_lecture_transcript를 호출하세요."}
+        return result
+    if not start_if_missing:
+        return {"status":"not_started"}
+    save(path, {"status":"processing", "phase":"starting"})
+    process = subprocess.Popen([sys.executable, str(Path(__file__).with_name("lecture.py")), content_id],
+                               stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                               start_new_session=True)
+    path.with_suffix(".pid").write_text(str(process.pid))
+    return {"status":"processing", "content_id":content_id}
+
+
+@mcp.tool()
+def retry_lecture_transcript(content_id: str) -> dict:
+    """Retry a failed transcription; refuses to replace a running or completed transcript."""
+    from lecture import job_path
+    current = lecture_transcript(content_id, False)
+    if current["status"] not in {"failed", "not_started"}:
+        return current
+    job_path(content_id).unlink(missing_ok=True)
+    return lecture_transcript(content_id)
 
 
 if __name__ == "__main__":

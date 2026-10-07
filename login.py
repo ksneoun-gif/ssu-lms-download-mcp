@@ -28,6 +28,17 @@ def main() -> None:
                 if any(cookie["name"] == "xn_api_token" and (
                        cookie.get("expires", -1) <= 0 or cookie["expires"] > time.time())
                        for cookie in cookies):
+                    token = next(c["value"] for c in cookies if c["name"] == "xn_api_token")
+                    try:
+                        check = browser.request.get(
+                            "https://canvas.ssu.ac.kr/learningx/api/v1/learn_activities/courses?term_ids[]=50",
+                            headers={"Authorization": "Bearer " + token}, timeout=15000)
+                        if not check.ok or not isinstance(check.json(), list):
+                            time.sleep(2)
+                            continue
+                    except Exception:
+                        time.sleep(2)
+                        continue
                     temporary = STATE.with_suffix(".tmp")
                     kept = [cookie for cookie in browser.cookies() if cookie["domain"].lstrip(".")
                             in {"ssu.ac.kr", "canvas.ssu.ac.kr", "commons.ssu.ac.kr"}]
