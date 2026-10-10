@@ -64,12 +64,17 @@ test_live_auth_rejects_stale_cookie()
 def test_media_origins():
     from lecture import trusted_media
     assert trusted_media('https://ssuin-object.commonscdn.com/ssu-contents/contents/x.mp4')
+    assert trusted_media('https://ssuin-object.commonscdn.com/ssu-contents/contents31/ssu1000001/x.mp4')
     assert trusted_media('https://ssu-toast.commonscdn.com/contents31/ssu1000001/x.mp4')
     for url in ('http://ssu-toast.commonscdn.com/contents31/ssu1000001/x.mp4',
                 'https://ssu-toast.commonscdn.com.evil.test/contents31/ssu1000001/x.mp4',
                 'https://user@ssu-toast.commonscdn.com/contents31/ssu1000001/x.mp4',
                 'https://ssu-toast.commonscdn.com:8443/contents31/ssu1000001/x.mp4',
-                'https://ssu-toast.commonscdn.com/other/x.mp4'):
+                'https://ssu-toast.commonscdn.com/other/x.mp4',
+                'https://ssuin-object.commonscdn.com/ssu-contents/contents31/ssu1000002/x.mp4',
+                'https://ssuin-object.commonscdn.com/ssu-contents/contents31/ssu1000001-evil/x.mp4',
+                'http://ssuin-object.commonscdn.com/ssu-contents/contents31/ssu1000001/x.mp4',
+                'https://ssuin-object.commonscdn.com.evil.test/ssu-contents/contents31/ssu1000001/x.mp4'):
         assert not trusted_media(url)
 
 test_media_origins()

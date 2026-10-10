@@ -1,15 +1,13 @@
 """Capture an LMS login from an isolated Chrome profile; never prints cookies."""
 
-import json
-import os
 import time
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
+from server import save_session
 
 
 APP_DIR = Path.home() / "Library/Application Support/ssu-lms-download-mcp"
-STATE = APP_DIR / "session.json"
 PID = APP_DIR / "login.pid"
 
 
@@ -39,12 +37,9 @@ def main() -> None:
                     except Exception:
                         time.sleep(2)
                         continue
-                    temporary = STATE.with_suffix(".tmp")
                     kept = [cookie for cookie in browser.cookies() if cookie["domain"].lstrip(".")
                             in {"ssu.ac.kr", "canvas.ssu.ac.kr", "commons.ssu.ac.kr"}]
-                    temporary.write_text(json.dumps({"captured_at": time.time(), "cookies": kept}))
-                    os.chmod(temporary, 0o600)
-                    temporary.replace(STATE)
+                    save_session(kept)
                     return
                 time.sleep(2)
         finally:

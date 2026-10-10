@@ -8,4 +8,4 @@ description: Summarize Soongsil LMS lecture videos using verified timestamped sp
 3. `lecture_transcript(content_id)`를 호출한다. 작업은 백그라운드에서 로컬 음성 인식을 수행한다. `processing`이면 단계와 진행 시간을 알리고, 완료될 때 조회한다. 중단/실패는 `retry_lecture_transcript`로 재시도한다. 반복 호출은 기존 완료 대본을 재사용한다.
 4. `complete`의 segments를 읽고 한국어로 핵심 개념, 설명 흐름, 사례, 복습 질문을 요약한다. 각 주요 주장에 영상 시간 구간을 붙인다. 강의록이 제공되면 전문용어·수식을 대조한다. 음성 인식 오류와 원문에 없는 추론을 구분한다. 제목만으로 내용을 만들어내거나 부분 대본을 전체 요약이라고 표현하지 않는다.
 5. 영상은 처리 후 삭제된다. 대본은 사용자 로컬 Application Support에 재사용 캐시로 남는다. Drive 저장을 요청한 경우 기존 숭실대 / 3-2 / 과목 / 주차 폴더에 요약을 저장하고 결과를 확인한다.
-6. 학교가 세션을 무효화하면 재로그인이 필요하다. 최초 로그인으로 영구 인증을 보장하지 않는다.
+6. MCP 인증이 실패하면 같은 플러그인의 `auth-recovery/SKILL.md`에 따라 LearningX로 먼저 복구하고 다시 검증한다. 앱 인증도 실패하면 브라우저 로그인이 필요하다. 최초 로그인으로 영구 인증을 보장하지 않는다.

@@ -13,7 +13,8 @@ ROOT = Path.home() / 'Library/Application Support/ssu-lms-download-mcp/transcrip
 
 def trusted_media(url):
     parsed = urlparse(url)
-    prefixes = {'ssuin-object.commonscdn.com': '/ssu-contents/contents/',
+    prefixes = {'ssuin-object.commonscdn.com': ('/ssu-contents/contents/',
+                                               '/ssu-contents/contents31/ssu1000001/'),
                 'ssu-toast.commonscdn.com': '/contents31/ssu1000001/'}
     return (parsed.scheme == 'https' and not parsed.username
             and parsed.port in (None, 443)

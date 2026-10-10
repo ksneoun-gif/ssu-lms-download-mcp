@@ -27,22 +27,42 @@ mcp = FastMCP("Soongsil LMS Downloads")
 
 
 def trusted(url: str) -> bool:
-    parsed = urlparse(url)
-    return parsed.scheme == "https" and parsed.hostname in ALLOWED_HOSTS and not parsed.username
+    try:
+        parsed = urlparse(url)
+        return (parsed.scheme == "https" and parsed.hostname in ALLOWED_HOSTS
+                and parsed.username is None and parsed.password is None and parsed.port in (None, 443))
+    except ValueError:
+        return False
+
+
+def save_session(cookies: list[dict], source: str = "browser") -> None:
+    APP_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+    descriptor, path = tempfile.mkstemp(prefix="session-", suffix=".tmp", dir=APP_DIR)
+    temporary = Path(path)
+    try:
+        with os.fdopen(descriptor, "w") as output:
+            json.dump({"captured_at": time.time(), "source": source, "cookies": cookies}, output)
+            output.flush()
+            os.fsync(output.fileno())
+        temporary.replace(STATE)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def session() -> requests.Session:
     if not STATE.exists():
         raise RuntimeError("LMS 로그인이 필요합니다. start_login을 호출하세요.")
     data = json.loads(STATE.read_text())
-    token = next((c for c in data["cookies"] if c["name"] == "xn_api_token"), None)
+    token = next((c for c in data["cookies"] if c["name"] == "xn_api_token"
+                  and c["domain"].lstrip(".") == "canvas.ssu.ac.kr"), None)
     expires = token.get("expires", -1) if token else 0
     if not token or (expires > 0 and expires <= time.time()):
         raise RuntimeError("LMS 로그인이 만료되었습니다. start_login을 호출하세요.")
     client = requests.Session()
     for cookie in data["cookies"]:
         if cookie["domain"].lstrip(".") in COOKIE_DOMAINS:
-            client.cookies.set(cookie["name"], cookie["value"], domain=cookie["domain"], path=cookie["path"])
+            client.cookies.set(cookie["name"], cookie["value"], domain=cookie["domain"], path=cookie["path"],
+                               secure=cookie.get("secure", True))
     client.headers.update({"User-Agent": "Mozilla/5.0"})
     client.lms_token = token["value"]
     return client
@@ -74,6 +94,8 @@ def get(client: requests.Session, url: str, *, stream: bool = False) -> requests
 def materials(client: requests.Session, course_id: int) -> list[dict]:
     url = f"https://canvas.ssu.ac.kr/learningx/api/v1/courses/{course_id}/modules?include_detail=true"
     modules = get(client, url).json()
+    if not isinstance(modules, list) or not all(isinstance(module, dict) for module in modules):
+        raise RuntimeError("학교 자료 API 응답이 올바르지 않습니다.")
     result = []
     for module in modules:
         for row in module.get("module_items", []):
@@ -86,8 +108,15 @@ def materials(client: requests.Session, course_id: int) -> list[dict]:
 
 
 @mcp.tool()
-def start_login() -> dict:
-    """Open a separate Chrome window for the user to log in to Soongsil LMS."""
+def start_login(method: str = "auto") -> dict:
+    """Prefer LearningX recovery on Mac. Use computer-use to open the app, obtain a fresh weekly-learning launch link, then call restore_learningx_session. method=browser opens the existing Chrome login fallback."""
+    if method not in {"auto", "learningx", "browser"}:
+        raise ValueError("method must be auto, learningx, or browser")
+    app = Path("/Applications/LearningX Student.app")
+    if method == "learningx" or (method == "auto" and sys.platform == "darwin" and app.exists()):
+        return {"status": "learningx_link_required", "app_path": str(app),
+                "next_tool": "restore_learningx_session",
+                "message": "LearningX에서 수강 강좌의 주차학습을 열고 새 sessionless_launch 링크를 restore_learningx_session에 전달하세요. 앱 로그인 화면이면 사용자에게 창을 보여주세요. 링크와 토큰을 답변에 출력하지 마세요. 앱 인증도 실패하면 start_login(method='browser')를 사용하세요."}
     APP_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
     if LOGIN_PID.exists():
         try:
@@ -103,6 +132,13 @@ def start_login() -> dict:
 
 
 @mcp.tool()
+def restore_learningx_session(launch_url: str) -> dict:
+    """Recover LMS authentication from a fresh Soongsil LearningX weekly-learning launch URL. Saves only after both course and material APIs pass. Never print this URL or its tokens."""
+    from learningx import recover
+    return recover(launch_url)
+
+
+@mcp.tool()
 def auth_status() -> dict:
     """Check whether a usable LMS browser session was captured locally."""
     try:
@@ -110,10 +146,12 @@ def auth_status() -> dict:
         return {"authenticated": True, "verified_live": True}
     except requests.RequestException:
         return {"authenticated": None, "verified_live": False,
-                "message": "학교 API 요청이 실패했습니다. 네트워크와 로그인 상태를 확인하세요."}
+                "message": "학교 API 요청이 실패했습니다. 네트워크와 로그인 상태를 확인하세요.",
+                "recovery_tool": "start_login"}
     except (OSError, ValueError, KeyError, RuntimeError):
         return {"authenticated": False, "verified_live": False,
-                "message": "start_login으로 LMS에 로그인하세요."}
+                "message": "start_login으로 LearningX 인증 복구를 먼저 시도하세요.",
+                "recovery_tool": "start_login"}
 
 
 @mcp.tool()

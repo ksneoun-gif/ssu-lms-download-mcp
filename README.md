@@ -1,6 +1,6 @@
 # 숭실대 LMS 다운로드 MCP
 
-이 Mac의 Chrome에서 LMS에 로그인한 뒤 주차별 자료를 Google Drive에 업로드합니다. 로그인 쿠키는 `~/Library/Application Support/ssu-lms-download-mcp/`에만 저장되며 GitHub에 올라가지 않습니다.
+이 Mac의 LearningX Student로 인증을 복구하거나 Chrome에서 로그인한 뒤 주차별 자료를 Google Drive에 업로드합니다. 로그인 쿠키는 `~/Library/Application Support/ssu-lms-download-mcp/`에만 저장되며 GitHub에 올라가지 않습니다.
 
 ```sh
 python3 -m venv .venv
@@ -8,7 +8,9 @@ python3 -m venv .venv
 .venv/bin/python server.py
 ```
 
-MCP 클라이언트는 `mcp.json`의 stdio 설정을 사용합니다. `start_login`으로 전용 Chrome 창을 열고 LMS 로그인 후 `auth_status`를 확인하세요. `list_courses`, `list_materials`, `stage_material` 순서로 사용합니다. `stage_material`이 반환한 임시 경로를 Google Drive의 `upload_file`에 전달하고 업로드를 확인한 뒤 `delete_staged_material`로 지웁니다. 세션이 만료되면 `start_login`을 다시 호출하세요.
+MCP 클라이언트는 `mcp.json`의 stdio 설정을 사용합니다. Mac에 LearningX가 있으면 `start_login()`은 앱 인증 복구를 안내합니다. Codex는 앱에서 수강 강좌의 주차학습을 열어 새 링크를 얻고 `restore_learningx_session(launch_url)`에 전달합니다. 링크로 독립된 Canvas 세션을 만든 뒤, 학교가 제공한 주차학습 LTI 인증 양식을 제출하여 `xn_api_token`을 받습니다. 기존 강좌·자료 API가 모두 성공한 경우에만 인증 쿠키를 원자적으로 저장합니다. 실패 시 기존 세션은 유지하며 인증 URL을 오류에 출력하지 않습니다. 링크와 토큰을 답변·로그·파일에 남기지 마세요.
+
+LearningX 복구 후 `auth_status`를 확인하고 `list_courses`, `list_materials`, `stage_material` 순서로 사용합니다. 앱이 없거나 앱 인증도 실패하면 `start_login(method="browser")`로 기존 Chrome 로그인 창을 엽니다. `stage_material`의 임시 경로를 Google Drive `upload_file`에 전달하고 업로드를 확인한 뒤 `delete_staged_material`로 지웁니다. 앱 조작은 Codex의 `auth-recovery` 스킬이 담당하며, MCP 서버가 혼자 앱 화면을 자동 조작하는 것은 아닙니다. 데스크톱 앱에 접근할 수 없는 실행에서는 사용자 로그인이 필요할 수 있습니다.
 
 2026년 2학기 기본 `term_id`는 50입니다. 자료는 LMS에서 열린 파일만 표시됩니다. 파일 한 개당 100MB로 제한합니다.
 
