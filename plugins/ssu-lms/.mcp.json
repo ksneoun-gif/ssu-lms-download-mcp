@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "ssu-lms": {
+      "type": "stdio",
+      "command": "$HOME/Downloads/ssu-lms-download-mcp/.venv/bin/python",
+      "args": ["$HOME/Downloads/ssu-lms-download-mcp/server.py"],
+      "cwd": "$HOME/Downloads/ssu-lms-download-mcp"
+    }
+  }
+}

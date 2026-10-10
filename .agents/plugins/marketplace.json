@@ -1,0 +1,20 @@
+{
+  "name": "ssu-lms-github",
+  "interface": {
+    "displayName": "숭실대 LMS (GitHub)"
+  },
+  "plugins": [
+    {
+      "name": "ssu-lms",
+      "source": {
+        "source": "local",
+        "path": "./plugins/ssu-lms"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

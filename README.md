@@ -27,3 +27,7 @@ Codex `lecture-summary` 스킬이 전체 대본과 강의록을 근거로 요약
 2026-10-07 전사 검증에서 Commons가 반환한 `ssu-toast.commonscdn.com/contents31/ssu1000001/` 경로를 기존 CDN 허용 목록에 추가했습니다. 이 CDN은 Commons Referer와 User-Agent가 없는 다운로드를 HTTP 403으로 거부하므로 해당 헤더를 포함합니다. HTTPS, 호스트·경로 제한과 1GB 한도는 유지합니다.
 
 `study-briefing`은 로그인된 LMS 화면의 미완료 강의·과제·퀴즈와 가까운 마감을 정리합니다. 자료 Drive 동기화는 기존 weekly-sync를 사용합니다. `auth_status`와 로그인 저장은 실제 학교 API로 검증하며, 학교 측 만료를 우회하지 않습니다.
+
+## Codex 플러그인 업데이트
+
+이 저장소는 `plugins/ssu-lms` 플러그인을 포함한 GitHub 마켓플레이스입니다. 최초 연결은 `codex plugin marketplace add ksneoun-gif/ssu-lms-download-mcp --ref main`으로 하고, GitHub에 변경을 올린 뒤 `codex plugin marketplace upgrade ssu-lms-github`와 `codex plugin add ssu-lms@ssu-lms-github`를 실행해 설치본을 갱신합니다. GitHub에 push하는 것만으로 로컬 Codex가 즉시 바뀌지는 않습니다. MCP 실행 설정은 현재 Mac의 `$HOME/Downloads/ssu-lms-download-mcp` 체크아웃을 사용합니다.
