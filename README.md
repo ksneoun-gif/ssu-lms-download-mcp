@@ -30,4 +30,4 @@ Codex `lecture-summary` 스킬이 전체 대본과 강의록을 근거로 요약
 
 ## Codex 플러그인 업데이트
 
-이 저장소는 `plugins/ssu-lms` 플러그인을 포함한 GitHub 마켓플레이스입니다. 최초 연결은 `codex plugin marketplace add ksneoun-gif/ssu-lms-download-mcp --ref main`으로 하고, GitHub에 변경을 올린 뒤 `codex plugin marketplace upgrade ssu-lms-github`와 `codex plugin add ssu-lms@ssu-lms-github`를 실행해 설치본을 갱신합니다. GitHub에 push하는 것만으로 로컬 Codex가 즉시 바뀌지는 않습니다. MCP 실행 설정은 현재 Mac의 `$HOME/Downloads/ssu-lms-download-mcp` 체크아웃을 사용합니다.
+이 저장소는 `plugins/ssu-lms` 플러그인을 포함한 GitHub 마켓플레이스입니다. 최초 연결은 `codex plugin marketplace add ksneoun-gif/ssu-lms-download-mcp --ref main`으로 하고, GitHub에 변경을 올린 뒤 `codex plugin marketplace upgrade ssu-lms-github`와 `codex plugin add ssu-lms@ssu-lms-github`를 실행해 설치본을 갱신합니다. GitHub에 push하는 것만으로 로컬 Codex가 즉시 바뀌지는 않습니다. MCP 실행 설정은 `~/Downloads/ssu-lms-download-mcp` 체크아웃을 사용합니다.
