@@ -1,0 +1,21 @@
+{
+  "name": "ssu-lms",
+  "version": "0.2.4",
+  "description": "숭실대 강의파일 Drive 저장, 영상 요약, 학습 마감 브리핑과 유세인트 시설 예약",
+  "author": {
+    "name": "ksneoun-gif"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "숭실대 LMS",
+    "shortDescription": "강의 자료·영상 요약·시설 예약",
+    "longDescription": "주차별 자료를 Drive에 중복 없이 저장하고, 영상 대본으로 요약하며, LMS 마감 브리핑과 유세인트 화면을 통한 시설 예약을 지원합니다.",
+    "developerName": "ksneoun-gif",
+    "category": "Education",
+    "capabilities": [
+      "Tools"
+    ],
+    "defaultPrompt": "이번 학기 주차별 강의파일을 Google Drive 숭실대 / 3-2 / 각 과목 / 주차 폴더에 중복 없이 저장해줘."
+  },
+  "mcpServers": "./.mcp.json"
+}
