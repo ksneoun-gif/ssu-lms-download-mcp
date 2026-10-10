@@ -3,7 +3,7 @@
     "ssu-lms": {
       "type": "stdio",
       "command": "/bin/sh",
-      "args": ["-c", "exec \"$HOME/Downloads/ssu-lms-download-mcp/.venv/bin/python\" \"$HOME/Downloads/ssu-lms-download-mcp/server.py\""]
+      "args": ["-c", "exec \"$HOME/Downloads/ssu-lms-download-mcp/.venv/bin/python\" \"$HOME/.codex/.tmp/marketplaces/ssu-lms-github/server.py\""]
     }
   }
 }
