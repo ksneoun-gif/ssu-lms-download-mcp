@@ -30,4 +30,14 @@ Codex `lecture-summary` 스킬이 전체 대본과 강의록을 근거로 요약
 
 ## Codex 플러그인 업데이트
 
-이 저장소는 `plugins/ssu-lms` 플러그인을 포함한 GitHub 마켓플레이스입니다. 최초 연결은 `codex plugin marketplace add ksneoun-gif/ssu-lms-download-mcp --ref main`으로 합니다. GitHub에 변경을 올린 뒤 `codex plugin marketplace upgrade ssu-lms-github`와 `codex plugin add ssu-lms@ssu-lms-github`를 실행하고 Codex를 다시 시작해 설치본을 갱신합니다. GitHub에 push하는 것만으로 로컬 Codex가 즉시 바뀌지는 않습니다. MCP 서버 코드는 갱신된 마켓플레이스 체크아웃에서 실행하며 Python 가상환경은 `~/Downloads/ssu-lms-download-mcp/.venv`를 사용합니다.
+이 저장소는 `plugins/ssu-lms` 플러그인을 포함한 GitHub 마켓플레이스입니다. 최초 연결은 `codex plugin marketplace add ksneoun-gif/ssu-lms-mac --ref main`으로 합니다. GitHub에 변경을 올린 뒤 `codex plugin marketplace upgrade ssu-lms-github`와 `codex plugin add ssu-lms@ssu-lms-github`를 실행하고 Codex를 다시 시작해 설치본을 갱신합니다. GitHub에 push하는 것만으로 로컬 Codex가 즉시 바뀌지는 않습니다. MCP 서버 코드는 갱신된 마켓플레이스 체크아웃에서 실행하며 Python 가상환경은 `~/Downloads/ssu-lms-download-mcp/.venv`를 사용합니다.
+
+## 0.2.7 사용 장애 수정
+
+- `list_weekly_content(course_id)`는 주차별 영상·퀴즈 항목과 빈 주차를 구분합니다. `list_materials`는 파일만 반환합니다. 실제 Commons iframe 확인은 여전히 필요합니다.
+- `auth_status`는 학교 API HTTP 상태를 토큰/URL 없이 반환합니다. HTTP 400은 토큰 만료의 확정 증거가 아닙니다.
+- 관찰된 contents15/contents29 영상 경로를 지원하고, 잘못된 포트·경로 이탈 주소는 거부합니다.
+- 전사 시작 실패는 재시도 가능한 실패 상태로 기록하고, 임시 상태 파일은 고유 이름으로 원자적으로 교체합니다. 영상 HTTP 오류의 인증 URL은 반환하지 않습니다.
+- 자료 파일명은 NFC로 정규화합니다. Drive 업로드 후 name/parents/size를 확인한 다음 임시 파일을 삭제하세요.
+
+제한: 학교 세션이 만료되면 앱/브라우저 복구가 필요합니다. 퀴즈 실제 문항·시설 예약은 로그인된 UI에서 확인합니다. 컴퓨터가 꺼진 상태의 자동화, 동시 전사 실행 제어, 자동 전사 정확도 보장은 제공하지 않습니다.

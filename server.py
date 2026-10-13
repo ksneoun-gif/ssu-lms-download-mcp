@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import unicodedata
 import zipfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -91,13 +92,17 @@ def get(client: requests.Session, url: str, *, stream: bool = False) -> requests
     raise RuntimeError("LMS 리다이렉트가 너무 많습니다.")
 
 
-def materials(client: requests.Session, course_id: int) -> list[dict]:
+def modules(client: requests.Session, course_id: int) -> list[dict]:
     url = f"https://canvas.ssu.ac.kr/learningx/api/v1/courses/{course_id}/modules?include_detail=true"
     modules = get(client, url).json()
     if not isinstance(modules, list) or not all(isinstance(module, dict) for module in modules):
         raise RuntimeError("학교 자료 API 응답이 올바르지 않습니다.")
+    return modules
+
+
+def materials(client: requests.Session, course_id: int) -> list[dict]:
     result = []
-    for module in modules:
+    for module in modules(client, course_id):
         for row in module.get("module_items", []):
             item = (row.get("content_data") or {}).get("item_content_data") or {}
             content_id = item.get("content_id")
@@ -144,6 +149,11 @@ def auth_status() -> dict:
     try:
         list_courses()
         return {"authenticated": True, "verified_live": True}
+    except requests.HTTPError as error:
+        status = error.response.status_code if error.response is not None else None
+        return {"authenticated": None, "verified_live": False, "http_status": status,
+                "reason": "school_api_error", "recovery_tool": "start_login",
+                "message": "학교 API 오류입니다. HTTP 400만으로 토큰 만료를 단정하지 말고 재시도 후 인증 복구를 확인하세요."}
     except requests.RequestException:
         return {"authenticated": None, "verified_live": False,
                 "message": "학교 API 요청이 실패했습니다. 네트워크와 로그인 상태를 확인하세요.",
@@ -173,6 +183,26 @@ def list_materials(course_id: int) -> list[dict]:
 
 
 @mcp.tool()
+def list_weekly_content(course_id: int) -> list[dict]:
+    """Read weekly module items, including videos and quizzes. Empty file lists do not imply empty weeks. IDs are API evidence; verify a video Commons iframe before transcription."""
+    if course_id <= 0:
+        raise ValueError("course_id must be positive")
+    result = []
+    for module in modules(session(), course_id):
+        items = []
+        for row in module.get("module_items", []):
+            data = row.get("content_data") or {}
+            item = data.get("item_content_data") or {}
+            content_id = item.get("content_id")
+            items.append({"title": row.get("title") or item.get("title") or data.get("title", ""),
+                          "type": row.get("type") or data.get("content_type") or item.get("content_type", ""),
+                          "content_id": str(content_id) if content_id and content_id != "not_open" else None,
+                          "filename": item.get("file_name"), "available": bool(content_id and content_id != "not_open")})
+        result.append({"week": module.get("title", ""), "items": items})
+    return result
+
+
+@mcp.tool()
 def stage_material(course_id: int, content_id: str, week: str = "") -> dict:
     """Stage one LMS file temporarily. Upload its path to Google Drive, then call delete_staged_material."""
     if course_id <= 0 or not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", content_id):
@@ -197,7 +227,7 @@ def stage_material(course_id: int, content_id: str, week: str = "") -> dict:
     if not trusted(file_url):
         raise RuntimeError("LMS가 허용되지 않은 다운로드 주소를 반환했습니다.")
     STAGING.mkdir(mode=0o700, parents=True, exist_ok=True)
-    safe_name = re.sub(r"[\\/:*?\"<>|\x00-\x1f]", "_", selected["filename"]).strip(" .")[:150] or "file"
+    safe_name = re.sub(r"[\\/:*?\"<>|\x00-\x1f]", "_", unicodedata.normalize("NFC", selected["filename"])).strip(" .")[:150] or "file"
     descriptor, path = tempfile.mkstemp(prefix="lms-", suffix=Path(safe_name).suffix, dir=STAGING)
     temporary = Path(path)
     size = 0
@@ -253,10 +283,14 @@ def lecture_transcript(content_id: str, start_if_missing: bool = True) -> dict:
     if not start_if_missing:
         return {"status":"not_started"}
     save(path, {"status":"processing", "phase":"starting"})
-    process = subprocess.Popen([sys.executable, str(Path(__file__).with_name("lecture.py")), content_id],
-                               stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                               start_new_session=True)
-    path.with_suffix(".pid").write_text(str(process.pid))
+    try:
+        process = subprocess.Popen([sys.executable, str(Path(__file__).with_name("lecture.py")), content_id],
+                                   stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                   start_new_session=True)
+        path.with_suffix(".pid").write_text(str(process.pid))
+    except OSError:
+        save(path, {"status": "failed", "error": "전사 프로세스를 시작하지 못했습니다. retry_lecture_transcript를 호출하세요."})
+        return json.loads(path.read_text())
     return {"status":"processing", "content_id":content_id}
 
 

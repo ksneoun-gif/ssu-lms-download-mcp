@@ -35,12 +35,6 @@ def test_staged_file_cleanup_is_confined():
             raise AssertionError("path traversal accepted")
 
 
-if __name__ == "__main__":
-    test_download_origin_allowlist()
-    test_session_cookie_does_not_expire_locally()
-    test_staged_file_cleanup_is_confined()
-
-
 def test_transcript_id_confined():
     from lecture import job_path
     for bad in ('../session', '/tmp/x', 'x?token=secret'):
@@ -58,8 +52,6 @@ def test_live_auth_rejects_stale_cookie():
         assert auth_status()['authenticated'] is False
 
 
-test_transcript_id_confined()
-test_live_auth_rejects_stale_cookie()
 
 def test_media_origins():
     from lecture import trusted_media
@@ -77,4 +69,66 @@ def test_media_origins():
                 'https://ssuin-object.commonscdn.com.evil.test/ssu-contents/contents31/ssu1000001/x.mp4'):
         assert not trusted_media(url)
 
-test_media_origins()
+
+
+def test_weekly_content_keeps_non_files_and_empty_weeks():
+    from server import list_weekly_content, materials
+    rows = [{"title": "1주차", "module_items": [
+        {"title": "영상", "type": "video", "content_data": {"item_content_data": {"content_id": "real-video"}}},
+        {"title": "예정", "content_data": {"item_content_data": {"content_id": "not_open"}}}]},
+        {"title": "2주차", "module_items": []}]
+    with patch('server.modules', return_value=rows), patch('server.session'):
+        assert materials(None, 1) == []
+        result = list_weekly_content(1)
+        assert result[0]['items'][0]['content_id'] == 'real-video'
+        assert result[0]['items'][1]['available'] is False
+        assert result[1]['items'] == []
+
+
+def test_media_new_paths_and_malformed_urls():
+    from lecture import trusted_media
+    assert trusted_media('https://ssuin-object.commonscdn.com/ssu-contents/contents29/ssu1000001/a.mp4')
+    assert trusted_media('https://ssu-toast.commonscdn.com/contents15/ssu1000001/a.mp4')
+    for url in ('https://[bad', 'https://ssu-toast.commonscdn.com:bad/contents15/ssu1000001/a.mp4',
+                'https://ssu-toast.commonscdn.com/contents15/ssu1000001/../other/a.mp4',
+                'https://ssu-toast.commonscdn.com/contents15/ssu1000001/%2e%2e/a.mp4',
+                'https://ssu-toast.commonscdn.com/contents15/ssu1000001/%252e%252e/a.mp4'):
+        assert not trusted_media(url)
+
+
+def test_http_status_is_safe_and_not_expiry_claim():
+    import requests
+    from server import auth_status
+    response = requests.Response()
+    response.status_code = 400
+    with patch('server.list_courses', side_effect=requests.HTTPError('secret-url', response=response)):
+        result = auth_status()
+        assert result['http_status'] == 400 and result['authenticated'] is None
+        assert 'secret-url' not in str(result)
+
+
+def test_worker_spawn_failure_is_retryable():
+    from server import lecture_transcript
+    with TemporaryDirectory() as directory, patch('lecture.ROOT', Path(directory)), patch('server.subprocess.Popen', side_effect=OSError('failed')):
+        result = lecture_transcript('test-worker')
+        assert result['status'] == 'failed'
+        assert lecture_transcript('test-worker', False)['status'] == 'failed'
+
+
+def test_dead_worker_and_completed_cache():
+    import json
+    from server import lecture_transcript
+    with TemporaryDirectory() as directory, patch('lecture.ROOT', Path(directory)):
+        path = Path(directory) / 'test-worker.json'
+        path.write_text(json.dumps({'status': 'processing'}))
+        assert lecture_transcript('test-worker', False)['status'] == 'failed'
+        path.write_text(json.dumps({'status': 'complete', 'segments': []}))
+        assert lecture_transcript('test-worker', False)['status'] == 'complete'
+
+
+if __name__ == "__main__":
+    checks = [value for name, value in list(globals().items())
+              if name.startswith("test_") and callable(value)]
+    for check in checks:
+        check()
+    print(f"{len(checks)} server regression checks passed")

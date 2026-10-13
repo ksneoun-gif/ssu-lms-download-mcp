@@ -6,20 +6,27 @@ import sys
 import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, unquote
 import requests
 
 ROOT = Path.home() / 'Library/Application Support/ssu-lms-download-mcp/transcripts'
 
 def trusted_media(url):
-    parsed = urlparse(url)
     prefixes = {'ssuin-object.commonscdn.com': ('/ssu-contents/contents/',
-                                               '/ssu-contents/contents31/ssu1000001/'),
-                'ssu-toast.commonscdn.com': '/contents31/ssu1000001/'}
-    return (parsed.scheme == 'https' and not parsed.username
-            and parsed.port in (None, 443)
-            and parsed.hostname in prefixes
-            and parsed.path.startswith(prefixes[parsed.hostname]))
+                                               '/ssu-contents/contents31/ssu1000001/',
+                                               '/ssu-contents/contents29/ssu1000001/',
+                                               '/contents15/ssu1000001/'),
+                'ssu-toast.commonscdn.com': ('/contents31/ssu1000001/', '/contents15/ssu1000001/')}
+    try:
+        parsed = urlparse(url)
+        path = unquote(parsed.path)
+        return (parsed.scheme == 'https' and parsed.username is None and parsed.password is None
+                and parsed.port in (None, 443) and parsed.hostname in prefixes
+                and path.startswith(prefixes[parsed.hostname])
+                and not any(part in ('.', '..') for part in path.split('/'))
+                and not any(char in path for char in ('\\', '%', '\x00')))
+    except ValueError:
+        return False
 
 def job_path(content_id):
     if not re.fullmatch(r'[A-Za-z0-9_-]{1,80}', content_id):
@@ -28,10 +35,14 @@ def job_path(content_id):
     return ROOT / (content_id + '.json')
 
 def save(path, data):
-    temporary = path.with_suffix('.tmp')
-    temporary.write_text(json.dumps(data, ensure_ascii=False))
-    os.chmod(temporary, 0o600)
-    temporary.replace(path)
+    descriptor, name = tempfile.mkstemp(prefix=path.stem + '-', suffix='.tmp', dir=path.parent)
+    temporary = Path(name)
+    try:
+        with os.fdopen(descriptor, 'w', encoding='utf-8') as output:
+            json.dump(data, output, ensure_ascii=False)
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 def transcribe(content_id):
     from server import get, session
@@ -48,7 +59,8 @@ def transcribe(content_id):
         if not 0 < duration <= 10800:
             raise ValueError('영상 길이가 없거나 3시간을 초과합니다.')
         filename = root.findtext('.//main_media') or ''
-        uri = root.findtext('.//media_uri[@method="progressive"]') or ''
+        uri = next((node.text or '' for node in root.findall('.//media_uri')
+                    if trusted_media(node.text or '')), '')
         url = uri.replace('[MEDIA_FILE]', filename)
         if not trusted_media(url):
             raise ValueError('허용된 영상 주소가 아닙니다.')
@@ -78,7 +90,7 @@ def transcribe(content_id):
             raise ValueError('인식된 음성이 없습니다.')
         save(path, {'status':'complete','source':'local_speech_recognition','title':root.findtext('.//content_metadata/title'), 'duration_seconds':duration,'segments':rows,'warning':'자동 음성 인식: 전문용어와 수식은 강의록으로 대조하세요.'})
     except Exception as error:
-        save(path, {'status':'failed', 'error':type(error).__name__ + ': ' + str(error)[:500]})
+        save(path, {'status':'failed', 'error':type(error).__name__ + (': 영상 요청이 실패했습니다. 인증과 네트워크를 확인하세요.' if isinstance(error, requests.RequestException) else ': ' + str(error)[:500])})
     finally:
         if media:
             media.unlink(missing_ok=True)
