@@ -36,7 +36,8 @@ def main():
     directory = Path(os.environ.get('SSU_LMS_ENV', str(default)))
     python = environment_python(directory)
     if args.setup:
-        subprocess.run([sys.executable, '-m', 'venv', '--without-pip', str(directory)], check=True)
+        if not python.is_file():
+            subprocess.run([sys.executable, '-m', 'venv', '--without-pip', str(directory)], check=True)
         # The bundled Python's ensurepip subprocess can fail inside the host sandbox.
         import importlib.util
         if importlib.util.find_spec('pip') is not None:
@@ -55,7 +56,7 @@ def main():
         return 1 if missing else 0
     if missing:
         print('Missing packages: ' + ', '.join(missing)
-              + '. Run start.ps1 -Setup first (Internet access required).', file=sys.stderr)
+              + '. Run start.ps1 -Setup -Configure on Windows, or launch.cjs --setup on macOS (Internet required).', file=sys.stderr)
         return 1
     return subprocess.call([str(selected), '-u', str(ROOT / 'server.py')], cwd=ROOT)
 

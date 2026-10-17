@@ -70,3 +70,17 @@ Windows에서 PID 존재 확인에 `os.kill(pid,0)`을 사용하지 않고 Win32
 2026-10-17 Windows 검증: 서버 11개, 인증 복구 8개, 로그인 7개, 패키지 4개 검사 및 Windows PID/UTF-8 검사를 통과했습니다. MCP 실행 준비는 ready:true입니다. 이 작업의 제한 실행 환경에서는 Python asyncio 내부 socketpair 생성이 대기하여 실제 stdio 연결은 검증하지 못했습니다. 현재 저장된 학교 세션도 없어 과목 조회·자료 다운로드·실제 전사는 미검증입니다.
 
 2026-10-17 Windows 검증: 서버 11개, 인증 복구 8개, 로그인 7개, 패키지 4개 검사 및 Windows PID/UTF-8 검사를 통과했습니다. MCP 실행 준비는 ready:true입니다. 이 작업의 제한 실행 환경에서는 Python asyncio 내부 socketpair 생성이 대기하여 실제 stdio 연결은 검증하지 못했습니다. 현재 저장된 학교 세션도 없어 과목 조회·자료 다운로드·실제 전사는 미검증입니다.
+
+## 0.3.1 Windows setup and connection diagnosis
+
+On Windows, Node is no longer required for setup or normal MCP operation after configuring the plugin. Run this in ordinary PowerShell from the downloaded repository:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\start.ps1 -Setup -Configure
+```
+
+For an installed plugin, run its own `start.ps1` from the plugin folder. Setup finds a real Python executable, checks dependencies, then writes both `.mcp.json` and `mcp.json` with the resolved Python and server paths. Existing configurations are backed up once. `start.ps1 -Check` does not write configuration. `ready:true` only confirms dependencies, not school authentication or MCP communication. Local absolute paths are generated on the user's PC; do not commit the configured manifests back to GitHub. Reinstalling/upgrading a cached plugin can replace local configuration; configure the newly installed version again.
+
+`verify_local.py` checks the actual stdio handshake, live school authentication, course/material lists and one temporary download/cleanup. It updates both launch configurations only after these checks pass. It finds the installed version automatically, or accepts `--plugin-root`. It does not start speech transcription without a selected lecture.
+
+A native stdio server showing `auth_status:unsupported` in `codex mcp list --json` means MCP OAuth is not supported; it is not evidence of failed LMS authentication. If direct MCP verification succeeds but a running conversation has no LMS tools, first check the effective server configuration and the tool list exposed to that conversation. A restart alone is not proof of tool availability. A cloud execution environment cannot use a Windows-local stdio server or its local session.
