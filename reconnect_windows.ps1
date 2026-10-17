@@ -1,4 +1,4 @@
-param([switch]$FindCliOnly)
+param([switch]$FindCliOnly, [switch]$FindGitOnly)
 $ErrorActionPreference = 'Stop'
 function Find-CodexCli {
     $candidates = @()
@@ -24,6 +24,30 @@ function Find-CodexCli {
     }
     throw 'Codex CLI could not be located through PATH, installed app packages, or the running Codex app. Keep Codex open and retry in ordinary PowerShell.'
 }
+function Find-GitExecutable {
+    $candidates = @()
+    $command = Get-Command git.exe -CommandType Application -ErrorAction SilentlyContinue
+    if ($command) { $candidates += $command.Source }
+    $candidates += Join-Path $env:USERPROFILE '.cache\codex-runtimes\codex-primary-runtime\dependencies\native\git\cmd\git.exe'
+    foreach ($root in @($env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:LOCALAPPDATA)) {
+        if ($root) {
+            $candidates += Join-Path $root 'Git\cmd\git.exe'
+            $candidates += Join-Path $root 'Programs\Git\cmd\git.exe'
+        }
+    }
+    foreach ($candidate in ($candidates | Select-Object -Unique)) {
+        if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) { continue }
+        try {
+            $null = & $candidate --version
+            if ($LASTEXITCODE -eq 0) { return $candidate }
+        } catch { }
+    }
+    throw 'A working git.exe was not found in PATH, the Codex runtime, or standard Git installations.'
+}
+$gitPath = Find-GitExecutable
+$env:PATH = (Split-Path -Parent $gitPath) + [IO.Path]::PathSeparator + $env:PATH
+Write-Host "GIT_FOUND: $gitPath"
+if ($FindGitOnly) { return }
 $codexPath = Find-CodexCli
 Write-Host "CODEX_CLI_FOUND: $codexPath"
 if ($FindCliOnly) { return }
