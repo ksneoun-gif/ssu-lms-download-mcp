@@ -15,6 +15,7 @@ from urllib.parse import quote, urljoin, urlparse
 
 import requests
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 
 from runtime import APP_DIR, WORKER_OPTIONS, process_running, LOGIN_STATUS, login_status
@@ -100,6 +101,12 @@ def modules(client: requests.Session, course_id: int) -> list[dict]:
     return modules
 
 
+def canvas_json(response: requests.Response):
+    # Canvas may prefix JSON with its anti-hijacking guard.
+    text = response.text.lstrip()
+    return json.loads(text.removeprefix("while(1);"))
+
+
 def canvas_pages(client: requests.Session, url: str) -> list[dict]:
     """Read paginated Canvas lists without sending the LearningX bearer token."""
     rows = []
@@ -111,7 +118,7 @@ def canvas_pages(client: requests.Session, url: str) -> list[dict]:
             raise RuntimeError("Invalid Canvas pagination")
         visited.add(url)
         with get(client, url) as response:
-            batch = response.json()
+            batch = canvas_json(response)
             if not isinstance(batch, list) or not all(isinstance(row, dict) for row in batch):
                 raise RuntimeError("Invalid Canvas list response")
             rows.extend(batch)
@@ -138,7 +145,7 @@ def canvas_materials(client: requests.Session, course_id: int) -> tuple[list[dic
                 if row.get("type") != "File" or not re.fullmatch(r"[1-9][0-9]*", file_id):
                     continue
                 with get(client, f"https://canvas.ssu.ac.kr/api/v1/courses/{course_id}/files/{file_id}") as response:
-                    info = response.json()
+                    info = canvas_json(response)
                 if not isinstance(info, dict):
                     raise ValueError("Invalid Canvas file response")
                 if info.get("locked_for_user") or info.get("hidden_for_user"):
@@ -224,7 +231,7 @@ def restore_learningx_session(launch_url: str) -> dict:
     return recover(launch_url)
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 def auth_status() -> dict:
     """Check whether a usable LMS browser session was captured locally."""
     try:
@@ -246,7 +253,7 @@ def auth_status() -> dict:
                 "recovery_tool": "start_login"}
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 def list_courses(term_id: int = 50) -> list[dict]:
     """List enrolled courses for a term. Default term 50 is 2026 fall."""
     if term_id <= 0:
@@ -256,7 +263,7 @@ def list_courses(term_id: int = 50) -> list[dict]:
             for row in get(session(), url).json() if row.get("id")]
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 def list_materials(course_id: int) -> list[dict]:
     """List Commons and Canvas files. Sizes are unverified until staging; use diagnose_materials for gaps."""
     if course_id <= 0:
@@ -264,7 +271,7 @@ def list_materials(course_id: int) -> list[dict]:
     return materials(session(), course_id)
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 def list_weekly_content(course_id: int) -> list[dict]:
     """Read weekly module items, including videos and quizzes. Empty file lists do not imply empty weeks. IDs are API evidence; verify a video Commons iframe before transcription."""
     if course_id <= 0:
@@ -288,7 +295,7 @@ def list_weekly_content(course_id: int) -> list[dict]:
     return result
 
 
-@mcp.tool()
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=True))
 def diagnose_materials(course_id: int) -> dict:
     """Report unresolved metadata and Canvas fallback status without exposing cookies or signed URLs."""
     if course_id <= 0:
@@ -315,7 +322,7 @@ def stage_material(course_id: int, content_id: str, week: str = "") -> dict:
     if selected.get("source") == "canvas":
         file_id = content_id.removeprefix("canvas-file-")
         with get(client, f"https://canvas.ssu.ac.kr/api/v1/courses/{course_id}/files/{file_id}") as response:
-            info = response.json()
+            info = canvas_json(response)
         if not isinstance(info, dict):
             raise RuntimeError("Invalid Canvas file response")
         if info.get("locked_for_user") or info.get("hidden_for_user"):
