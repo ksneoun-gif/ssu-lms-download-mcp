@@ -1,15 +1,16 @@
 ---
 name: weekly-sync
-description: Sync user-selected Soongsil LMS weekly lecture files to matching Google Drive course and week folders, skipping duplicates and converting PowerPoint materials to PDF.
+description: Sync user-selected Soongsil LMS weekly lecture files to matching Google Drive course and week folders, skipping duplicates.
 ---
 
 # Weekly LMS to Drive sync
 
-Use the `ssu-lms` MCP and connected Google Drive tools. LMS files are staged temporarily and must be uploaded through Drive.
+Use the `ssu-lms` MCP and the connected Google Drive tools. The LMS MCP stages files temporarily; it does not upload to Drive by itself.
 
-1. Check `auth_status`, then list term 50 courses and materials. If authentication fails, follow `auth-recovery/SKILL.md`, verify the restored session, and retry. If recovery fails, report that login is needed.
+1. Check `auth_status`, then list term 50 courses and each course's materials. If authentication fails, follow the sibling `auth-recovery/SKILL.md`: use LearningX first, verify the restored session, and retry the interrupted read. If recovery fails, report that login is needed; do not claim the run succeeded.
 2. Process only courses and weeks the user requests. Find the existing `숭실대 / 3-2` Drive folder by name and reuse matching course folders; create only missing course or week folders. If multiple matching parent folders exist, ask which one to use.
-3. For each material, list the destination week folder first. Compare filenames after Unicode NFC normalization. If the target filename already exists, skip it without staging. For `.ppt` and `.pptx`, compare and save the corresponding `.pdf` filename instead.
-4. Stage missing material with `stage_material(course_id, content_id, week)`. For `.ppt` or `.pptx`, convert the staged file to PDF using LibreOffice in headless mode (`soffice --headless --convert-to pdf --outdir <staging-directory> <staged-file>`); verify the output exists and is a readable PDF before upload. Upload only the PDF, using the original basename with `.pdf`, to the same week folder. For other file types, upload the staged file as-is.
-5. Verify the uploaded Drive metadata: name, parent folder, and byte size. Always call `delete_staged_material(staging_id)` after the attempt for the original staged file. If conversion created a PDF in the staging directory, delete that temporary PDF too (use its `lms-...pdf` staging filename). Clean up after failures as well.
-6. Report uploaded, skipped, and failed counts with course/week names. Never call a staged or converted file an upload until Drive metadata confirms it. Do not save lecture files in `~/Downloads` or create a second Drive hierarchy.
+3. For each LMS material, list the target week folder first. Compare filenames after Unicode NFC normalization. If the name is already present, skip it without staging or uploading. Treat each course/week separately.
+4. For a missing file, call `stage_material(course_id, content_id, week)`. For PowerPoint materials, convert the staged file to PDF with LibreOffice in headless mode and verify the output is a readable PDF; upload only the PDF. Upload other staged files as-is. Verify the uploaded Drive file's name, parent, and byte size with metadata readback. Always call `delete_staged_material(staging_id)` after the attempt, including if the upload fails, and remove any converted temporary PDF.
+5. Report counts of uploaded, skipped, and failed files with affected course/week names. Never call a staged file a Drive upload. Do not save lecture files in `~/Downloads` or create a second Drive hierarchy.
+
+The LMS may invalidate its own login session. First try the normal LearningX authentication recovery; ask for browser login only if it fails or the app is unavailable. Never bypass LMS authentication.

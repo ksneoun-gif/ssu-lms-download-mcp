@@ -1,4 +1,5 @@
 import json
+import sys
 import stat
 import unittest
 from pathlib import Path
@@ -114,7 +115,8 @@ class RecoveryTests(unittest.TestCase):
             self.assertEqual(list(Path(directory).glob("*.tmp")), [])
             server.save_session([], "learningx")
             self.assertEqual(json.loads(server.STATE.read_text())["source"], "learningx")
-            self.assertEqual(stat.S_IMODE(server.STATE.stat().st_mode), 0o600)
+            if sys.platform != "win32":
+                self.assertEqual(stat.S_IMODE(server.STATE.stat().st_mode), 0o600)
 
     def test_browser_fallback_and_auto_recovery(self):
         with patch("server.sys.platform", "darwin"), patch.object(Path, "exists", return_value=True):
@@ -125,3 +127,4 @@ class RecoveryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

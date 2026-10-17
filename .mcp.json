@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "ssu-lms": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "${CODEX_PLUGIN_ROOT}/launch.cjs"
+      ]
+    }
+  }
+}

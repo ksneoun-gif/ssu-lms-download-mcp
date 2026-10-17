@@ -17,7 +17,7 @@ import requests
 from mcp.server.fastmcp import FastMCP
 
 
-APP_DIR = Path.home() / "Library/Application Support/ssu-lms-download-mcp"
+from runtime import APP_DIR, WORKER_OPTIONS, process_running, LOGIN_STATUS, login_status
 STATE = APP_DIR / "session.json"
 LOGIN_PID = APP_DIR / "login.pid"
 STAGING = APP_DIR / "staging"
@@ -41,7 +41,7 @@ def save_session(cookies: list[dict], source: str = "browser") -> None:
     descriptor, path = tempfile.mkstemp(prefix="session-", suffix=".tmp", dir=APP_DIR)
     temporary = Path(path)
     try:
-        with os.fdopen(descriptor, "w") as output:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
             json.dump({"captured_at": time.time(), "source": source, "cookies": cookies}, output)
             output.flush()
             os.fsync(output.fileno())
@@ -53,7 +53,7 @@ def save_session(cookies: list[dict], source: str = "browser") -> None:
 def session() -> requests.Session:
     if not STATE.exists():
         raise RuntimeError("LMS 로그인이 필요합니다. start_login을 호출하세요.")
-    data = json.loads(STATE.read_text())
+    data = json.loads(STATE.read_text(encoding="utf-8"))
     token = next((c for c in data["cookies"] if c["name"] == "xn_api_token"
                   and c["domain"].lstrip(".") == "canvas.ssu.ac.kr"), None)
     expires = token.get("expires", -1) if token else 0
@@ -119,21 +119,39 @@ def start_login(method: str = "auto") -> dict:
         raise ValueError("method must be auto, learningx, or browser")
     app = Path("/Applications/LearningX Student.app")
     if method == "learningx" or (method == "auto" and sys.platform == "darwin" and app.exists()):
-        return {"status": "learningx_link_required", "app_path": str(app),
+        return {"status": "learningx_link_required", "app_path": str(app) if sys.platform == "darwin" else None,
                 "next_tool": "restore_learningx_session",
                 "message": "LearningX에서 수강 강좌의 주차학습을 열고 새 sessionless_launch 링크를 restore_learningx_session에 전달하세요. 앱 로그인 화면이면 사용자에게 창을 보여주세요. 링크와 토큰을 답변에 출력하지 마세요. 앱 인증도 실패하면 start_login(method='browser')를 사용하세요."}
     APP_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
     if LOGIN_PID.exists():
         try:
-            os.kill(int(LOGIN_PID.read_text()), 0)
-            return {"status": "waiting_for_login", "message": "열려 있는 로그인 창에서 LMS 로그인을 완료하세요."}
+            if not process_running(int(LOGIN_PID.read_text(encoding="utf-8"))):
+                raise ProcessLookupError()
+            status = login_status()['status']
+            return {'status': status if status != 'not_started' else 'starting',
+                    'message': '플러그인 전용 브라우저 상태입니다. 다른 브라우저의 로그인은 공유되지 않습니다.'}
         except (OSError, ValueError):
             LOGIN_PID.unlink(missing_ok=True)
+    LOGIN_STATUS.unlink(missing_ok=True)
     process = subprocess.Popen([sys.executable, str(Path(__file__).with_name("login.py"))],
                                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                               start_new_session=True)
-    LOGIN_PID.write_text(str(process.pid))
-    return {"status": "waiting_for_login", "message": "새 Chrome 창에서 LMS 로그인을 완료한 뒤 auth_status를 호출하세요."}
+                               **WORKER_OPTIONS)
+    LOGIN_PID.write_text(str(process.pid), encoding="utf-8")
+    deadline = time.monotonic() + 40
+    while time.monotonic() < deadline:
+        status = login_status()['status']
+        if status in {'waiting_for_login', 'authenticated'}:
+            return {'status': status, 'message': '플러그인이 연 별도 브라우저 창에서 로그인하세요. 다른 Chrome 창의 로그인은 공유되지 않습니다.'}
+        if process.poll() is not None:
+            LOGIN_PID.unlink(missing_ok=True)
+            return {'status': 'login_start_failed', 'reason': status}
+        time.sleep(0.1)
+    process.terminate()
+    process.wait(timeout=5)
+    LOGIN_PID.unlink(missing_ok=True)
+    login_status('startup_timeout')
+    return {'status': 'login_start_failed', 'reason': 'startup_timeout',
+            'message': '브라우저 자동화가 시작되지 않았습니다. 일반 PowerShell에서 실행 환경을 확인하세요.'}
 
 
 @mcp.tool()
@@ -160,6 +178,7 @@ def auth_status() -> dict:
                 "recovery_tool": "start_login"}
     except (OSError, ValueError, KeyError, RuntimeError):
         return {"authenticated": False, "verified_live": False,
+                "login_worker": login_status()["status"],
                 "message": "start_login으로 LearningX 인증 복구를 먼저 시도하세요.",
                 "recovery_tool": "start_login"}
 
@@ -270,13 +289,14 @@ def lecture_transcript(content_id: str, start_if_missing: bool = True) -> dict:
     from lecture import job_path, save
     path = job_path(content_id)
     if path.exists():
-        result = json.loads(path.read_text())
+        result = json.loads(path.read_text(encoding="utf-8"))
         if result.get("status") != "processing":
             return result
         # Worker progress files omit pid; use the separate pid file.
         pid_file = path.with_suffix(".pid")
         try:
-            os.kill(int(pid_file.read_text()), 0)
+            if not process_running(int(pid_file.read_text(encoding="utf-8"))):
+                raise ProcessLookupError()
         except (OSError, ValueError):
             return {"status":"failed", "error":"전사 작업이 중단되었습니다. retry_lecture_transcript를 호출하세요."}
         return result
@@ -286,11 +306,11 @@ def lecture_transcript(content_id: str, start_if_missing: bool = True) -> dict:
     try:
         process = subprocess.Popen([sys.executable, str(Path(__file__).with_name("lecture.py")), content_id],
                                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                   start_new_session=True)
+                                   **WORKER_OPTIONS)
         path.with_suffix(".pid").write_text(str(process.pid))
     except OSError:
         save(path, {"status": "failed", "error": "전사 프로세스를 시작하지 못했습니다. retry_lecture_transcript를 호출하세요."})
-        return json.loads(path.read_text())
+        return json.loads(path.read_text(encoding="utf-8"))
     return {"status":"processing", "content_id":content_id}
 
 
@@ -307,3 +327,4 @@ def retry_lecture_transcript(content_id: str) -> dict:
 
 if __name__ == "__main__":
     mcp.run(transport="stdio")
+

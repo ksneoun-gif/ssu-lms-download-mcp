@@ -9,7 +9,8 @@ from pathlib import Path
 from urllib.parse import urlparse, unquote
 import requests
 
-ROOT = Path.home() / 'Library/Application Support/ssu-lms-download-mcp/transcripts'
+from runtime import APP_DIR
+ROOT = APP_DIR / 'transcripts'
 
 def trusted_media(url):
     prefixes = {'ssuin-object.commonscdn.com': ('/ssu-contents/contents/',
@@ -97,3 +98,4 @@ def transcribe(content_id):
 
 if __name__ == '__main__':
     transcribe(sys.argv[1])
+

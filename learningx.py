@@ -117,3 +117,4 @@ def recover(launch_url: str) -> dict:
         # HTTP exceptions contain credential-bearing URLs; never return them to MCP.
         return {"authenticated": False, "verified_live": False, "source": "learningx",
                 "message": "LearningX 인증 복구 실패. 앱에서 새 주차학습 링크로 재시도하세요. 기존 세션은 유지됩니다."}
+

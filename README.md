@@ -1,6 +1,6 @@
 # 숭실대 LMS 다운로드 MCP
 
-이 Mac의 LearningX Student로 인증을 복구하거나 Chrome에서 로그인한 뒤 주차별 자료를 Google Drive에 업로드합니다. 로그인 쿠키는 `~/Library/Application Support/ssu-lms-download-mcp/`에만 저장되며 GitHub에 올라가지 않습니다.
+Windows의 Chrome/Edge 또는 macOS의 LearningX/Chrome에서 인증한 뒤 주차별 자료를 Google Drive에 업로드합니다. 로그인 쿠키는 Windows의 `%LOCALAPPDATA%/ssu-lms-download-mcp/`, macOS의 `~/Library/Application Support/ssu-lms-download-mcp/`에 저장되며 GitHub에 올라가지 않습니다.
 
 ```sh
 python3 -m venv .venv
@@ -41,3 +41,32 @@ Codex `lecture-summary` 스킬이 전체 대본과 강의록을 근거로 요약
 - 자료 파일명은 NFC로 정규화합니다. Drive 업로드 후 name/parents/size를 확인한 다음 임시 파일을 삭제하세요.
 
 제한: 학교 세션이 만료되면 앱/브라우저 복구가 필요합니다. 퀴즈 실제 문항·시설 예약은 로그인된 UI에서 확인합니다. 컴퓨터가 꺼진 상태의 자동화, 동시 전사 실행 제어, 자동 전사 정확도 보장은 제공하지 않습니다.
+
+
+## 0.3.0 Windows/macOS 실행
+
+Node.js와 64비트 Python 3.10~3.13이 필요합니다. Python 실행 별칭을 제외하고 실제 설치본을 찾습니다. 서버 코드는 플러그인 안에 포함하며 MCP 설정은 `${CODEX_PLUGIN_ROOT}/launch.cjs`를 사용합니다. 기존 Mac 자료·영상 API와 보안 검사는 유지합니다.
+
+저장소를 내려받은 폴더에서 최초 1회 실행하세요.
+
+```sh
+node plugins/ssu-lms/launch.cjs --setup --check
+```
+
+`SSU_LMS_PYTHON`으로 Python 실행 파일, `SSU_LMS_ENV`로 기존 가상환경을 지정할 수 있습니다. 의존성 설치는 `--setup` 때만 실행합니다. 일반 MCP 시작 중에는 인터넷 설치를 하지 않습니다. 설치 후 `--check`의 `ready:true`를 확인하세요. Windows에서는 설치된 Chrome/Edge를 사용하며 `SSU_LMS_BROWSER=msedge`로 Edge를 선택할 수 있습니다.
+
+```sh
+codex plugin marketplace add ksneoun-gif/ssu-lms-mac --ref main
+codex plugin marketplace upgrade ssu-lms-github
+codex plugin add ssu-lms@ssu-lms-github
+```
+
+이미 마켓플레이스가 등록되어 있다면 첫 줄을 생략하세요. Codex를 다시 시작하고 플러그인을 선택하세요. 로그인 창은 독립 프로필을 사용하므로 다른 Chrome/Edge 창의 로그인과 공유되지 않습니다. `auth_status`의 실제 학교 API 검증 성공 후에만 로그인 성공으로 판정하세요.
+
+Windows에서 PID 존재 확인에 `os.kill(pid,0)`을 사용하지 않고 Win32 프로세스 조회를 사용합니다. 로그인 시작은 제한 시간과 실패 상태를 반환하며, 한글 파일·캐시는 UTF-8로 처리합니다. `test_server.py`, `test_learningx.py`, `test_windows.py`, `test_login.py`, `test_mcp.py`로 회귀검사를 실행할 수 있습니다.
+
+시설 예약은 로그인된 브라우저 UI를 사용하는 스킬이며 독립 예약 HTTP 도구가 아닙니다. Drive 동기화는 연결된 Drive 도구가 필요합니다. 강의 전사는 최초 Whisper 모델 다운로드가 필요합니다. 학교 로그인·실제 자료 다운로드·영상 전사는 해당 계정과 네트워크에서 별도로 검증해야 합니다.
+
+2026-10-17 Windows 검증: 서버 11개, 인증 복구 8개, 로그인 7개, 패키지 4개 검사 및 Windows PID/UTF-8 검사를 통과했습니다. MCP 실행 준비는 ready:true입니다. 이 작업의 제한 실행 환경에서는 Python asyncio 내부 socketpair 생성이 대기하여 실제 stdio 연결은 검증하지 못했습니다. 현재 저장된 학교 세션도 없어 과목 조회·자료 다운로드·실제 전사는 미검증입니다.
+
+2026-10-17 Windows 검증: 서버 11개, 인증 복구 8개, 로그인 7개, 패키지 4개 검사 및 Windows PID/UTF-8 검사를 통과했습니다. MCP 실행 준비는 ready:true입니다. 이 작업의 제한 실행 환경에서는 Python asyncio 내부 socketpair 생성이 대기하여 실제 stdio 연결은 검증하지 못했습니다. 현재 저장된 학교 세션도 없어 과목 조회·자료 다운로드·실제 전사는 미검증입니다.

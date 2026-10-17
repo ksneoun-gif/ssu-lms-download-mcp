@@ -1,5 +1,10 @@
 .venv/
+.runtime/
 __pycache__/
 *.pyc
-*.part
-.DS_Store
+.env
+session.json
+login.pid
+*profile*/
+transcripts/
+staging/

@@ -2,8 +2,10 @@
   "mcpServers": {
     "ssu-lms": {
       "type": "stdio",
-      "command": "/bin/sh",
-      "args": ["-c", "exec \"$HOME/Downloads/ssu-lms-download-mcp/.venv/bin/python\" \"$HOME/.codex/.tmp/marketplaces/ssu-lms-github/server.py\""]
+      "command": "node",
+      "args": [
+        "${CODEX_PLUGIN_ROOT}/launch.cjs"
+      ]
     }
   }
 }

@@ -132,3 +132,4 @@ if __name__ == "__main__":
     for check in checks:
         check()
     print(f"{len(checks)} server regression checks passed")
+

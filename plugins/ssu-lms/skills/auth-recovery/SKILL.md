@@ -16,3 +16,7 @@ LMS 인증 실패 시 이 절차를 먼저 수행한다. 로그인 복구는 사
 7. `authenticated:true, verified_live:true`와 이후 `auth_status` 성공을 확인하고, 중단됐던 조회·자료 작업을 재시도한다. 복구 실패 시 새 링크로 한 번만 재시도한다. 계속 실패하면 `start_login(method="browser")`로 기존 Chrome 로그인 창을 열고 사용자 로그인 후 다시 검증한다. 실패를 성공으로 보고하지 않는다.
 
 앱 인증까지 폐기되었으면 사용자 로그인이 필요하다. 이 방식은 로컬 데스크톱 앱에 접근할 수 있는 Codex 실행에 해당한다. 앱 화면에 접근할 수 없는 무인 실행에서는 복구가 필요한 상태를 보고한다. 학교의 실제 앱 토큰 만료 후 자동 갱신은 별도 실증 전까지 보장하지 않는다.
+
+## Windows execution
+
+Use `start_login(method="browser")` on Windows; the installed Chrome or Edge opens in the plugin profile. A different browser profile does not share this session. `login_start_failed` means no usable login window was confirmed. Check `reason` and browser availability before retrying. Verify `auth_status` has both `authenticated:true` and `verified_live:true` before reading course data. Keep LearningX recovery for macOS or a fresh user-supplied launch link.
