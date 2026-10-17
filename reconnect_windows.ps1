@@ -11,7 +11,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Marketplace upgrade failed; the existing insta
 if ($LASTEXITCODE -ne 0) { throw 'Plugin installation failed.' }
 $pluginPath = Join-Path $env:USERPROFILE '.codex\plugins\cache\ssu-lms-github\ssu-lms\0.3.2'
 if (-not (Test-Path -LiteralPath (Join-Path $pluginPath 'server.py'))) { throw 'The 0.3.2 plugin was not installed.' }
-& powershell.exe -NoProfile -File (Join-Path $pluginPath 'start.ps1') -Setup -Configure
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $pluginPath 'start.ps1') -Setup -Configure
 if ($LASTEXITCODE -ne 0) { throw 'Python setup or configuration failed.' }
 $pythonPath = Join-Path $env:LOCALAPPDATA 'ssu-lms-download-mcp\venv\Scripts\python.exe'
 if (-not (Test-Path -LiteralPath $pythonPath)) { throw 'The LMS Python runtime was not found.' }
