@@ -11,10 +11,41 @@ def response(data=None, links=None, chunks=()):
     result=MagicMock()
     result.__enter__.return_value=result
     result.json.return_value=data
+    result.text=json.dumps(data)
     result.links=links or {}
     result.headers={}
     result.iter_content.return_value=iter(chunks)
     return result
+
+def test_canvas_json_guard_and_plain_json():
+    for prefix in ('', 'while(1);', '  \nwhile(1);'):
+        value=response([{'id':1}])
+        value.text=prefix+value.text
+        assert server.canvas_json(value)==[{'id':1}]
+    for text in ('<html>login</html>', 'while(1);not-json'):
+        value=response()
+        value.text=text
+        try: server.canvas_json(value)
+        except ValueError: pass
+        else: raise AssertionError('invalid response accepted')
+
+def test_guarded_canvas_lists_and_file_metadata():
+    groups=response([{'name':'week7','items':[{'type':'File','content_id':123}]}])
+    file=response({'filename':'DTC.pdf','size':42})
+    groups.text='while(1);'+groups.text
+    file.text='while(1);'+file.text
+    with patch('server.get',side_effect=[groups,file]):
+        rows,status=server.canvas_materials(None,49010)
+        assert status=='checked' and rows[0]['content_id']=='canvas-file-123'
+
+def test_read_only_annotations_are_exported():
+    tools=server.mcp._tool_manager.list_tools()
+    readonly={'auth_status','list_courses','list_materials','list_weekly_content','diagnose_materials'}
+    for tool in tools:
+        if tool.name in readonly:
+            assert tool.annotations.readOnlyHint is True
+        else:
+            assert tool.annotations is None or tool.annotations.readOnlyHint is not True
 
 def test_missing_id_is_unknown():
     groups=[{'title':'1����','module_items':[{'id':42,'title':'DTC_pdf'}]}]
@@ -97,3 +128,4 @@ if __name__=='__main__':
     checks=[value for name,value in list(globals().items()) if name.startswith('test_') and callable(value)]
     for check in checks: check()
     print(f'{len(checks)} material and transcription regression checks passed')
+
