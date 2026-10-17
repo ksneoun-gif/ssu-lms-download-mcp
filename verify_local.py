@@ -25,6 +25,8 @@ async def verify():
             await asyncio.wait_for(client.initialize(), 30)
             tools = {t.name for t in (await client.list_tools()).tools}
             print('MCP_CONNECTED', len(tools), flush=True)
+            if 'diagnose_materials' not in tools:
+                raise RuntimeError('Updated material-resolution tool is missing; old server is still loaded.')
             async def call(name, arguments):
                 result = await asyncio.wait_for(client.call_tool(name, arguments), 45)
                 if result.isError:
@@ -37,6 +39,8 @@ async def verify():
             print('AUTH', json.dumps(auth, ensure_ascii=True), flush=True)
             if auth.get('authenticated') is not True or auth.get('verified_live') is not True:
                 raise RuntimeError('Live school authentication did not pass.')
+            if auth.get('server_version') != '0.3.2':
+                raise RuntimeError('Expected server version 0.3.2.')
             courses = await call('list_courses', {})
             if not isinstance(courses, list):
                 raise RuntimeError('Unexpected course response.')
@@ -45,6 +49,10 @@ async def verify():
             for course in courses:
                 rows = await call('list_materials', {'course_id': course['course_id']})
                 print('MATERIAL_COUNT', course['course_id'], len(rows), flush=True)
+                if not rows:
+                    diagnostic = await call('diagnose_materials', {'course_id':course['course_id']})
+                    print('MATERIAL_DIAGNOSIS', course['course_id'], diagnostic['canvas_lookup_status'],
+                          'unresolved', len(diagnostic['unresolved_items']), flush=True)
                 if rows and sample is None:
                     sample = (course['course_id'], rows[0])
             if sample:

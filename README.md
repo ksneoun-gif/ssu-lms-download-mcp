@@ -84,3 +84,14 @@ For an installed plugin, run its own `start.ps1` from the plugin folder. Setup f
 `verify_local.py` checks the actual stdio handshake, live school authentication, course/material lists and one temporary download/cleanup. It updates both launch configurations only after these checks pass. It finds the installed version automatically, or accepts `--plugin-root`. It does not start speech transcription without a selected lecture.
 
 A native stdio server showing `auth_status:unsupported` in `codex mcp list --json` means MCP OAuth is not supported; it is not evidence of failed LMS authentication. If direct MCP verification succeeds but a running conversation has no LMS tools, first check the effective server configuration and the tool list exposed to that conversation. A restart alone is not proof of tool availability. A cloud execution environment cannot use a Windows-local stdio server or its local session.
+
+## 0.3.2 Material resolution and transcript review
+
+- File-list `size_bytes` is null until downloaded. The school's unverified number is preserved as `reported_size_bytes`; `stage_material` returns actual `bytes` and `size_verified: true`.
+- Missing LearningX content metadata is reported as `available: null` with a reason, rather than incorrectly claiming a file is closed.
+- Canvas-native File module items are resolved through the standard, paginated Canvas module and file APIs. Existing account access and HTTPS host restrictions remain required. External storage redirects are refused; denied or incomplete lookups are exposed through `diagnose_materials(course_id)`. A missing LearningX ID is not proof that a file is private.
+- New ASR jobs include per-segment average log probability and no-speech probability, with the verified content title as context. Raw wording is preserved. New and cached transcripts are marked unreviewed; confidence is not proof that a formula or word is correct.
+- `auth_status` exposes `server_version`. `verify_local.py` rejects an old server and diagnoses empty material lists.
+- On Windows run `powershell.exe -NoProfile -File .\reconnect_windows.ps1` from this repository, then restart Codex. It upgrades the existing marketplace, installs 0.3.2, uses the existing setup helper, and runs live MCP checks. It stops on failure and preserves session/transcript data.
+
+Validation: 9 new material/ASR regressions, 11 existing server checks, 8 LearningX tests, 7 login tests, and Windows process/UTF-8 checks passed. Native Canvas access for a particular school account still requires live verification after installing; this release does not claim that inaccessible school files have become available.

@@ -58,13 +58,13 @@ def transcribe(content_id):
         root = ET.fromstring(xml)
         duration = float(root.findtext('.//content_duration') or 0)
         if not 0 < duration <= 10800:
-            raise ValueError('영상 길이가 없거나 3시간을 초과합니다.')
+            raise ValueError('���� ���̰� ���ų� 3�ð��� �ʰ��մϴ�.')
         filename = root.findtext('.//main_media') or ''
         uri = next((node.text or '' for node in root.findall('.//media_uri')
                     if trusted_media(node.text or '')), '')
         url = uri.replace('[MEDIA_FILE]', filename)
         if not trusted_media(url):
-            raise ValueError('허용된 영상 주소가 아닙니다.')
+            raise ValueError('���� ���� �ּҰ� �ƴմϴ�.')
         save(path, {'status':'processing', 'phase':'temporary_media', 'duration_seconds':duration})
         fd, name = tempfile.mkstemp(suffix='.mp4', prefix='ssu-speech-')
         media = Path(name)
@@ -72,26 +72,33 @@ def transcribe(content_id):
         with os.fdopen(fd, 'wb') as output, requests.get(url, headers={'Referer': 'https://commons.ssu.ac.kr/', 'User-Agent': 'Mozilla/5.0'}, stream=True, timeout=60, allow_redirects=False) as response:
             response.raise_for_status()
             if response.is_redirect:
-                raise ValueError('영상 리다이렉트는 허용하지 않습니다.')
+                raise ValueError('���� �����̷�Ʈ�� ������� �ʽ��ϴ�.')
             for chunk in response.iter_content(1024*1024):
                 size += len(chunk)
                 if size > 1024**3:
-                    raise ValueError('영상이 임시 처리 제한 1GB를 초과합니다.')
+                    raise ValueError('������ �ӽ� ó�� ���� 1GB�� �ʰ��մϴ�.')
                 output.write(chunk)
         save(path, {'status':'processing', 'phase':'speech_recognition', 'duration_seconds':duration})
         from faster_whisper import WhisperModel
         model = WhisperModel('small', device='cpu', compute_type='int8', cpu_threads=4)
-        segments, info = model.transcribe(str(media), language='ko', vad_filter=True, beam_size=5)
+        title = root.findtext('.//content_metadata/title') or ''
+        segments, info = model.transcribe(str(media), language='ko', vad_filter=True, beam_size=5,
+                                         initial_prompt=title[:200] or None)
         rows = []
         for segment in segments:
-            rows.append({'start':round(segment.start,2), 'end':round(segment.end,2), 'text':segment.text.strip()})
+            rows.append({'start':round(segment.start,2), 'end':round(segment.end,2), 'text':segment.text.strip(),
+                         'avg_logprob':round(segment.avg_logprob,4),
+                         'no_speech_prob':round(segment.no_speech_prob,4)})
             if len(rows) % 20 == 0:
                 save(path, {'status':'processing','phase':'speech_recognition','processed_seconds':segment.end,'duration_seconds':duration})
         if not rows:
-            raise ValueError('인식된 음성이 없습니다.')
-        save(path, {'status':'complete','source':'local_speech_recognition','title':root.findtext('.//content_metadata/title'), 'duration_seconds':duration,'segments':rows,'warning':'자동 음성 인식: 전문용어와 수식은 강의록으로 대조하세요.'})
+            raise ValueError('�νĵ� ������ �����ϴ�.')
+        save(path, {'status':'complete','source':'local_speech_recognition','title':title,
+                    'model':'small','needs_review':True,'review_status':'unreviewed',
+                    'duration_seconds':duration,'segments':rows,
+                    'warning':'�ڵ� ���� �ν� �����̸� �˼� ���Դϴ�. �ŷڵ� ���� ��Ȯ�� ������ �ƴմϴ�. �������� ������ ���Ƿ����� �����ϼ���.'})
     except Exception as error:
-        save(path, {'status':'failed', 'error':type(error).__name__ + (': 영상 요청이 실패했습니다. 인증과 네트워크를 확인하세요.' if isinstance(error, requests.RequestException) else ': ' + str(error)[:500])})
+        save(path, {'status':'failed', 'error':type(error).__name__ + (': ���� ��û�� �����߽��ϴ�. ������ ��Ʈ��ũ�� Ȯ���ϼ���.' if isinstance(error, requests.RequestException) else ': ' + str(error)[:500])})
     finally:
         if media:
             media.unlink(missing_ok=True)

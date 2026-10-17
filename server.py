@@ -52,13 +52,13 @@ def save_session(cookies: list[dict], source: str = "browser") -> None:
 
 def session() -> requests.Session:
     if not STATE.exists():
-        raise RuntimeError("LMS 로그인이 필요합니다. start_login을 호출하세요.")
+        raise RuntimeError("LMS �α����� �ʿ��մϴ�. start_login�� ȣ���ϼ���.")
     data = json.loads(STATE.read_text(encoding="utf-8"))
     token = next((c for c in data["cookies"] if c["name"] == "xn_api_token"
                   and c["domain"].lstrip(".") == "canvas.ssu.ac.kr"), None)
     expires = token.get("expires", -1) if token else 0
     if not token or (expires > 0 and expires <= time.time()):
-        raise RuntimeError("LMS 로그인이 만료되었습니다. start_login을 호출하세요.")
+        raise RuntimeError("LMS �α����� ����Ǿ����ϴ�. start_login�� ȣ���ϼ���.")
     client = requests.Session()
     for cookie in data["cookies"]:
         if cookie["domain"].lstrip(".") in COOKIE_DOMAINS:
@@ -72,7 +72,7 @@ def session() -> requests.Session:
 def get(client: requests.Session, url: str, *, stream: bool = False) -> requests.Response:
     for _ in range(8):
         if not trusted(url):
-            raise RuntimeError("LMS가 허용되지 않은 다운로드 주소를 반환했습니다.")
+            raise RuntimeError("LMS�� ������ ���� �ٿ�ε� �ּҸ� ��ȯ�߽��ϴ�.")
         parsed = urlparse(url)
         headers = {"Authorization": "Bearer " + client.lms_token} if parsed.hostname == "canvas.ssu.ac.kr" and parsed.path.startswith("/learningx/api/") else {}
         response = client.get(url, headers=headers, timeout=30, allow_redirects=False, stream=stream)
@@ -83,32 +83,95 @@ def get(client: requests.Session, url: str, *, stream: bool = False) -> requests
             continue
         if response.status_code in (401, 403):
             response.close()
-            raise RuntimeError("LMS 인증이 거부되었습니다. start_login을 호출하세요.")
+            raise RuntimeError("LMS ������ �źεǾ����ϴ�. start_login�� ȣ���ϼ���.")
         response.raise_for_status()
         if "text/html" in response.headers.get("Content-Type", "").lower():
             response.close()
-            raise RuntimeError("LMS가 파일 대신 로그인/오류 페이지를 반환했습니다.")
+            raise RuntimeError("LMS�� ���� ��� �α���/���� �������� ��ȯ�߽��ϴ�.")
         return response
-    raise RuntimeError("LMS 리다이렉트가 너무 많습니다.")
+    raise RuntimeError("LMS �����̷�Ʈ�� �ʹ� �����ϴ�.")
 
 
 def modules(client: requests.Session, course_id: int) -> list[dict]:
     url = f"https://canvas.ssu.ac.kr/learningx/api/v1/courses/{course_id}/modules?include_detail=true"
     modules = get(client, url).json()
     if not isinstance(modules, list) or not all(isinstance(module, dict) for module in modules):
-        raise RuntimeError("학교 자료 API 응답이 올바르지 않습니다.")
+        raise RuntimeError("�б� �ڷ� API ������ �ùٸ��� �ʽ��ϴ�.")
     return modules
+
+
+def canvas_pages(client: requests.Session, url: str) -> list[dict]:
+    """Read paginated Canvas lists without sending the LearningX bearer token."""
+    rows = []
+    visited = set()
+    while url:
+        parsed = urlparse(url)
+        if (not trusted(url) or parsed.hostname != "canvas.ssu.ac.kr"
+                or not parsed.path.startswith("/api/v1/") or url in visited or len(visited) >= 100):
+            raise RuntimeError("Invalid Canvas pagination")
+        visited.add(url)
+        with get(client, url) as response:
+            batch = response.json()
+            if not isinstance(batch, list) or not all(isinstance(row, dict) for row in batch):
+                raise RuntimeError("Invalid Canvas list response")
+            rows.extend(batch)
+            url = response.links.get("next", {}).get("url")
+    return rows
+
+
+def canvas_materials(client: requests.Session, course_id: int) -> tuple[list[dict], str]:
+    """Resolve only File module items; never launch videos or mark progress."""
+    result = []
+    try:
+        groups = canvas_pages(client, f"https://canvas.ssu.ac.kr/api/v1/courses/{course_id}/modules?include[]=items&per_page=100")
+        for group in groups:
+            items = group.get("items")
+            if items is None:
+                module_id = group.get("id")
+                if not isinstance(module_id, int) or module_id <= 0:
+                    raise ValueError("Invalid Canvas module id")
+                items = canvas_pages(client, f"https://canvas.ssu.ac.kr/api/v1/courses/{course_id}/modules/{module_id}/items?per_page=100")
+            if not isinstance(items, list) or not all(isinstance(row, dict) for row in items):
+                raise ValueError("Invalid Canvas module items")
+            for row in items:
+                file_id = str(row.get("content_id", ""))
+                if row.get("type") != "File" or not re.fullmatch(r"[1-9][0-9]*", file_id):
+                    continue
+                with get(client, f"https://canvas.ssu.ac.kr/api/v1/courses/{course_id}/files/{file_id}") as response:
+                    info = response.json()
+                if not isinstance(info, dict):
+                    raise ValueError("Invalid Canvas file response")
+                if info.get("locked_for_user") or info.get("hidden_for_user"):
+                    continue
+                name = info.get("filename") or info.get("display_name")
+                if not isinstance(name, str) or not name:
+                    continue
+                result.append({"week": group.get("name", ""), "content_id": "canvas-file-" + file_id,
+                               "filename": name, "size_bytes": None, "reported_size_bytes": info.get("size"),
+                               "size_verified": False, "source": "canvas"})
+        return result, "checked"
+    except (requests.RequestException, RuntimeError, ValueError, KeyError, TypeError):
+        # Keep working Commons files, but make an incomplete fallback visible.
+        return result, "incomplete_canvas_lookup"
 
 
 def materials(client: requests.Session, course_id: int) -> list[dict]:
     result = []
-    for module in modules(client, course_id):
+    modules_cache = modules(client, course_id)
+    for module in modules_cache:
         for row in module.get("module_items", []):
             item = (row.get("content_data") or {}).get("item_content_data") or {}
             content_id = item.get("content_id")
             if content_id and content_id != "not_open" and item.get("file_name"):
                 result.append({"week": module.get("title", ""), "content_id": str(content_id),
-                               "filename": item["file_name"], "size_bytes": item.get("total_file_size")})
+                               "filename": item["file_name"], "size_bytes": None,
+                               "reported_size_bytes": item.get("total_file_size"), "size_verified": False,
+                               "source": "commons"})
+    # LearningX does not include Canvas-native attachments in item_content_data.
+    if any(not ((row.get("content_data") or {}).get("item_content_data") or {}).get("content_id")
+           for module in modules_cache for row in module.get("module_items", [])):
+        native, _ = canvas_materials(client, course_id)
+        result.extend(native)
     return result
 
 
@@ -121,7 +184,7 @@ def start_login(method: str = "auto") -> dict:
     if method == "learningx" or (method == "auto" and sys.platform == "darwin" and app.exists()):
         return {"status": "learningx_link_required", "app_path": str(app) if sys.platform == "darwin" else None,
                 "next_tool": "restore_learningx_session",
-                "message": "LearningX에서 수강 강좌의 주차학습을 열고 새 sessionless_launch 링크를 restore_learningx_session에 전달하세요. 앱 로그인 화면이면 사용자에게 창을 보여주세요. 링크와 토큰을 답변에 출력하지 마세요. 앱 인증도 실패하면 start_login(method='browser')를 사용하세요."}
+                "message": "LearningX���� ���� ������ �����н��� ���� �� sessionless_launch ��ũ�� restore_learningx_session�� �����ϼ���. �� �α��� ȭ���̸� ����ڿ��� â�� �����ּ���. ��ũ�� ��ū�� �亯�� ������� ������. �� ������ �����ϸ� start_login(method='browser')�� ����ϼ���."}
     APP_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
     if LOGIN_PID.exists():
         try:
@@ -129,7 +192,7 @@ def start_login(method: str = "auto") -> dict:
                 raise ProcessLookupError()
             status = login_status()['status']
             return {'status': status if status != 'not_started' else 'starting',
-                    'message': '플러그인 전용 브라우저 상태입니다. 다른 브라우저의 로그인은 공유되지 않습니다.'}
+                    'message': '�÷����� ���� ������ �����Դϴ�. �ٸ� �������� �α����� �������� �ʽ��ϴ�.'}
         except (OSError, ValueError):
             LOGIN_PID.unlink(missing_ok=True)
     LOGIN_STATUS.unlink(missing_ok=True)
@@ -141,7 +204,7 @@ def start_login(method: str = "auto") -> dict:
     while time.monotonic() < deadline:
         status = login_status()['status']
         if status in {'waiting_for_login', 'authenticated'}:
-            return {'status': status, 'message': '플러그인이 연 별도 브라우저 창에서 로그인하세요. 다른 Chrome 창의 로그인은 공유되지 않습니다.'}
+            return {'status': status, 'message': '�÷������� �� ���� ������ â���� �α����ϼ���. �ٸ� Chrome â�� �α����� �������� �ʽ��ϴ�.'}
         if process.poll() is not None:
             LOGIN_PID.unlink(missing_ok=True)
             return {'status': 'login_start_failed', 'reason': status}
@@ -151,7 +214,7 @@ def start_login(method: str = "auto") -> dict:
     LOGIN_PID.unlink(missing_ok=True)
     login_status('startup_timeout')
     return {'status': 'login_start_failed', 'reason': 'startup_timeout',
-            'message': '브라우저 자동화가 시작되지 않았습니다. 일반 PowerShell에서 실행 환경을 확인하세요.'}
+            'message': '������ �ڵ�ȭ�� ���۵��� �ʾҽ��ϴ�. �Ϲ� PowerShell���� ���� ȯ���� Ȯ���ϼ���.'}
 
 
 @mcp.tool()
@@ -166,20 +229,20 @@ def auth_status() -> dict:
     """Check whether a usable LMS browser session was captured locally."""
     try:
         list_courses()
-        return {"authenticated": True, "verified_live": True}
+        return {"authenticated": True, "verified_live": True, "server_version": "0.3.2"}
     except requests.HTTPError as error:
         status = error.response.status_code if error.response is not None else None
         return {"authenticated": None, "verified_live": False, "http_status": status,
                 "reason": "school_api_error", "recovery_tool": "start_login",
-                "message": "학교 API 오류입니다. HTTP 400만으로 토큰 만료를 단정하지 말고 재시도 후 인증 복구를 확인하세요."}
+                "message": "�б� API �����Դϴ�. HTTP 400������ ��ū ���Ḧ �������� ���� ��õ� �� ���� ������ Ȯ���ϼ���."}
     except requests.RequestException:
         return {"authenticated": None, "verified_live": False,
-                "message": "학교 API 요청이 실패했습니다. 네트워크와 로그인 상태를 확인하세요.",
+                "message": "�б� API ��û�� �����߽��ϴ�. ��Ʈ��ũ�� �α��� ���¸� Ȯ���ϼ���.",
                 "recovery_tool": "start_login"}
     except (OSError, ValueError, KeyError, RuntimeError):
         return {"authenticated": False, "verified_live": False,
                 "login_worker": login_status()["status"],
-                "message": "start_login으로 LearningX 인증 복구를 먼저 시도하세요.",
+                "message": "start_login���� LearningX ���� ������ ���� �õ��ϼ���.",
                 "recovery_tool": "start_login"}
 
 
@@ -195,7 +258,7 @@ def list_courses(term_id: int = 50) -> list[dict]:
 
 @mcp.tool()
 def list_materials(course_id: int) -> list[dict]:
-    """List downloadable weekly files in one LMS course."""
+    """List Commons and Canvas files. Sizes are unverified until staging; use diagnose_materials for gaps."""
     if course_id <= 0:
         raise ValueError("course_id must be positive")
     return materials(session(), course_id)
@@ -216,9 +279,27 @@ def list_weekly_content(course_id: int) -> list[dict]:
             items.append({"title": row.get("title") or item.get("title") or data.get("title", ""),
                           "type": row.get("type") or data.get("content_type") or item.get("content_type", ""),
                           "content_id": str(content_id) if content_id and content_id != "not_open" else None,
-                          "filename": item.get("file_name"), "available": bool(content_id and content_id != "not_open")})
+                          "filename": item.get("file_name"),
+                          "available": False if content_id == "not_open" else (True if content_id else None),
+                          "availability_reason": "not_open" if content_id == "not_open" else
+                              ("identified" if content_id else "missing_content_metadata"),
+                          "module_item_id": row.get("id")})
         result.append({"week": module.get("title", ""), "items": items})
     return result
+
+
+@mcp.tool()
+def diagnose_materials(course_id: int) -> dict:
+    """Report unresolved metadata and Canvas fallback status without exposing cookies or signed URLs."""
+    if course_id <= 0:
+        raise ValueError("course_id must be positive")
+    unresolved = [{"week": group["week"], "title": row["title"], "module_item_id": row["module_item_id"]}
+                  for group in list_weekly_content(course_id) for row in group["items"]
+                  if row["availability_reason"] == "missing_content_metadata"]
+    native, status = canvas_materials(session(), course_id)
+    return {"unresolved_items": unresolved, "canvas_lookup_status": status, "canvas_materials": native,
+            "complete": not unresolved and status == "checked",
+            "message": "Missing metadata is not proof that a file is private or absent."}
 
 
 @mcp.tool()
@@ -230,21 +311,30 @@ def stage_material(course_id: int, content_id: str, week: str = "") -> dict:
     selected = next((item for item in materials(client, course_id)
                      if item["content_id"] == content_id and (not week or item["week"] == week)), None)
     if selected is None:
-        raise ValueError("이 과목의 공개된 자료 ID가 아닙니다.")
-    if Path(selected["filename"]).suffix.lower() in {".zip", ".pptx"}:
+        raise ValueError("�� ������ ������ �ڷ� ID�� �ƴմϴ�.")
+    if selected.get("source") == "canvas":
+        file_id = content_id.removeprefix("canvas-file-")
+        with get(client, f"https://canvas.ssu.ac.kr/api/v1/courses/{course_id}/files/{file_id}") as response:
+            info = response.json()
+        if not isinstance(info, dict):
+            raise RuntimeError("Invalid Canvas file response")
+        if info.get("locked_for_user") or info.get("hidden_for_user"):
+            raise RuntimeError("Canvas file is not accessible to this account")
+        file_url = info.get("url", "")
+    elif Path(selected["filename"]).suffix.lower() in {".zip", ".pptx"}:
         file_url = ("https://commons.ssu.ac.kr/index.php?module=xn_media_content2013"
                     "&act=dispXn_media_content2013DownloadContent&content_id=" + quote(content_id))
     else:
         info_url = "https://commons.ssu.ac.kr/viewer/ssplayer/uniplayer_support/content.php?content_id=" + quote(content_id)
         xml = get(client, info_url).text
         if "<!DOCTYPE" in xml.upper() or "<!ENTITY" in xml.upper():
-            raise RuntimeError("LMS 자료 정보 XML이 안전하지 않습니다.")
+            raise RuntimeError("LMS �ڷ� ���� XML�� �������� �ʽ��ϴ�.")
         uri = ET.fromstring(xml).findtext(".//content_download_uri")
         if not uri:
-            raise RuntimeError("LMS가 다운로드 주소를 제공하지 않았습니다.")
+            raise RuntimeError("LMS�� �ٿ�ε� �ּҸ� �������� �ʾҽ��ϴ�.")
         file_url = urljoin("https://commons.ssu.ac.kr/", uri.replace("&amp;", "&"))
     if not trusted(file_url):
-        raise RuntimeError("LMS가 허용되지 않은 다운로드 주소를 반환했습니다.")
+        raise RuntimeError("LMS�� ������ ���� �ٿ�ε� �ּҸ� ��ȯ�߽��ϴ�.")
     STAGING.mkdir(mode=0o700, parents=True, exist_ok=True)
     safe_name = re.sub(r"[\\/:*?\"<>|\x00-\x1f]", "_", unicodedata.normalize("NFC", selected["filename"])).strip(" .")[:150] or "file"
     descriptor, path = tempfile.mkstemp(prefix="lms-", suffix=Path(safe_name).suffix, dir=STAGING)
@@ -253,25 +343,26 @@ def stage_material(course_id: int, content_id: str, week: str = "") -> dict:
     try:
         with os.fdopen(descriptor, "wb") as output, get(client, file_url, stream=True) as response:
             if int(response.headers.get("Content-Length", "0")) > MAX_BYTES:
-                raise RuntimeError("파일이 100MB 제한을 초과합니다.")
+                raise RuntimeError("������ 100MB ������ �ʰ��մϴ�.")
             for chunk in response.iter_content(1024 * 1024):
                 size += len(chunk)
                 if size > MAX_BYTES:
-                    raise RuntimeError("파일이 100MB 제한을 초과합니다.")
+                    raise RuntimeError("������ 100MB ������ �ʰ��մϴ�.")
                 output.write(chunk)
         if size == 0:
-            raise RuntimeError("빈 파일을 받았습니다.")
+            raise RuntimeError("�� ������ �޾ҽ��ϴ�.")
         if temporary.suffix.lower() == ".pdf":
             with temporary.open("rb") as pdf:
                 if pdf.read(5) != b"%PDF-":
-                    raise RuntimeError("LMS가 유효한 PDF를 반환하지 않았습니다.")
+                    raise RuntimeError("LMS�� ��ȿ�� PDF�� ��ȯ���� �ʾҽ��ϴ�.")
         elif temporary.suffix.lower() in {".zip", ".pptx"} and not zipfile.is_zipfile(temporary):
-            raise RuntimeError("LMS가 유효한 ZIP/PPTX를 반환하지 않았습니다.")
+            raise RuntimeError("LMS�� ��ȿ�� ZIP/PPTX�� ��ȯ���� �ʾҽ��ϴ�.")
     except BaseException:
         temporary.unlink(missing_ok=True)
         raise
     return {"path": str(temporary), "staging_id": temporary.name, "filename": safe_name,
-            "bytes": size, "week": selected["week"]}
+            "bytes": size, "size_verified": True, "reported_size_bytes": selected.get("reported_size_bytes"),
+            "week": selected["week"]}
 
 
 @mcp.tool()
@@ -291,6 +382,9 @@ def lecture_transcript(content_id: str, start_if_missing: bool = True) -> dict:
     if path.exists():
         result = json.loads(path.read_text(encoding="utf-8"))
         if result.get("status") != "processing":
+            if result.get("status") == "complete":
+                result.setdefault("needs_review", True)
+                result.setdefault("review_status", "unreviewed")
             return result
         # Worker progress files omit pid; use the separate pid file.
         pid_file = path.with_suffix(".pid")
@@ -298,7 +392,7 @@ def lecture_transcript(content_id: str, start_if_missing: bool = True) -> dict:
             if not process_running(int(pid_file.read_text(encoding="utf-8"))):
                 raise ProcessLookupError()
         except (OSError, ValueError):
-            return {"status":"failed", "error":"전사 작업이 중단되었습니다. retry_lecture_transcript를 호출하세요."}
+            return {"status":"failed", "error":"���� �۾��� �ߴܵǾ����ϴ�. retry_lecture_transcript�� ȣ���ϼ���."}
         return result
     if not start_if_missing:
         return {"status":"not_started"}
@@ -309,7 +403,7 @@ def lecture_transcript(content_id: str, start_if_missing: bool = True) -> dict:
                                    **WORKER_OPTIONS)
         path.with_suffix(".pid").write_text(str(process.pid))
     except OSError:
-        save(path, {"status": "failed", "error": "전사 프로세스를 시작하지 못했습니다. retry_lecture_transcript를 호출하세요."})
+        save(path, {"status": "failed", "error": "���� ���μ����� �������� ���߽��ϴ�. retry_lecture_transcript�� ȣ���ϼ���."})
         return json.loads(path.read_text(encoding="utf-8"))
     return {"status":"processing", "content_id":content_id}
 
