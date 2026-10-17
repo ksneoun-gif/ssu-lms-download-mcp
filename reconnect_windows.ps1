@@ -1,10 +1,32 @@
+param([switch]$FindCliOnly)
 $ErrorActionPreference = 'Stop'
-$codexPath = 'C:\Program Files\WindowsApps\OpenAI.Codex_26.1013.3656.0_x64__2p2nqsd0c76g0\app\resources\codex.exe'
-if (-not (Test-Path -LiteralPath $codexPath)) {
-    $command = Get-Command codex.exe -ErrorAction SilentlyContinue
-    if (-not $command) { throw 'Codex CLI was not found. Open this script on the PC with Codex installed.' }
-    $codexPath = $command.Source
+function Find-CodexCli {
+    $candidates = @()
+    $command = Get-Command codex.exe -CommandType Application -ErrorAction SilentlyContinue
+    if ($command) { $candidates += $command.Source }
+    try {
+        foreach ($package in (Get-AppxPackage '*Codex*' -ErrorAction Stop | Sort-Object Version -Descending)) {
+            $candidates += Join-Path $package.InstallLocation 'app\resources\codex.exe'
+            $candidates += Join-Path $package.InstallLocation 'resources\codex.exe'
+        }
+    } catch { }
+    foreach ($process in (Get-Process -Name Codex -ErrorAction SilentlyContinue)) {
+        try {
+            if ($process.Path) {
+                $appDirectory = Split-Path -Parent $process.Path
+                $candidates += Join-Path $appDirectory 'resources\codex.exe'
+                $candidates += Join-Path $appDirectory 'app\resources\codex.exe'
+            }
+        } catch { }
+    }
+    foreach ($candidate in ($candidates | Select-Object -Unique)) {
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
+    }
+    throw 'Codex CLI could not be located through PATH, installed app packages, or the running Codex app. Keep Codex open and retry in ordinary PowerShell.'
 }
+$codexPath = Find-CodexCli
+Write-Host "CODEX_CLI_FOUND: $codexPath"
+if ($FindCliOnly) { return }
 & $codexPath plugin marketplace upgrade ssu-lms-github
 if ($LASTEXITCODE -ne 0) { throw 'Marketplace upgrade failed; the existing installation was retained.' }
 & $codexPath plugin add ssu-lms@ssu-lms-github
