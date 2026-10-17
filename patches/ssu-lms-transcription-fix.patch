@@ -1,0 +1,280 @@
+--- a/bootstrap.py
++++ b/bootstrap.py
+@@ -10,6 +10,13 @@
+ 
+ ROOT = Path(__file__).resolve().parent
+ MODULES = ('mcp', 'requests', 'playwright', 'faster_whisper', 'av')
++REQUIRED_FILES = ('server.py', 'lecture.py', 'runtime.py', 'learningx.py', 'login.py')
++
++
++def validate_package(root):
++    missing = [name for name in REQUIRED_FILES if not (root / name).is_file()]
++    if missing:
++        raise ValueError('Incomplete LMS plugin package: ' + ', '.join(missing))
+ 
+ 
+ def environment_python(directory):
+@@ -29,6 +36,7 @@
+     parser.add_argument('--setup', action='store_true')
+     parser.add_argument('--check', action='store_true')
+     args = parser.parse_args()
++    validate_package(ROOT)
+     installed = ROOT / '.runtime'
+     if not environment_python(installed).is_file():
+         installed = ROOT.parent.parent / '.runtime'
+--- a/plugins/ssu-lms/bootstrap.py
++++ b/plugins/ssu-lms/bootstrap.py
+@@ -10,6 +10,13 @@
+ 
+ ROOT = Path(__file__).resolve().parent
+ MODULES = ('mcp', 'requests', 'playwright', 'faster_whisper', 'av')
++REQUIRED_FILES = ('server.py', 'lecture.py', 'runtime.py', 'learningx.py', 'login.py')
++
++
++def validate_package(root):
++    missing = [name for name in REQUIRED_FILES if not (root / name).is_file()]
++    if missing:
++        raise ValueError('Incomplete LMS plugin package: ' + ', '.join(missing))
+ 
+ 
+ def environment_python(directory):
+@@ -29,6 +36,7 @@
+     parser.add_argument('--setup', action='store_true')
+     parser.add_argument('--check', action='store_true')
+     args = parser.parse_args()
++    validate_package(ROOT)
+     installed = ROOT / '.runtime'
+     if not environment_python(installed).is_file():
+         installed = ROOT.parent.parent / '.runtime'
+--- a/install_windows.py
++++ b/install_windows.py
+@@ -5,11 +5,13 @@
+ from pathlib import Path
+ import subprocess
+ import sys
++from bootstrap import validate_package
+ 
+ MODULES = ('mcp', 'requests', 'playwright', 'faster_whisper', 'av')
+ 
+ def configuration(root, python):
+     root, python = Path(root).resolve(), Path(python).resolve()
++    validate_package(root)
+     if not (root/'server.py').is_file() or not python.is_file():
+         raise ValueError('Plugin server or Python executable is missing.')
+     return {'mcpServers':{'ssu-lms':{'type':'stdio','command':str(python),
+--- a/plugins/ssu-lms/install_windows.py
++++ b/plugins/ssu-lms/install_windows.py
+@@ -5,11 +5,13 @@
+ from pathlib import Path
+ import subprocess
+ import sys
++from bootstrap import validate_package
+ 
+ MODULES = ('mcp', 'requests', 'playwright', 'faster_whisper', 'av')
+ 
+ def configuration(root, python):
+     root, python = Path(root).resolve(), Path(python).resolve()
++    validate_package(root)
+     if not (root/'server.py').is_file() or not python.is_file():
+         raise ValueError('Plugin server or Python executable is missing.')
+     return {'mcpServers':{'ssu-lms':{'type':'stdio','command':str(python),
+--- a/lecture.py
++++ b/lecture.py
+@@ -7,6 +7,9 @@
+ import xml.etree.ElementTree as ET
+ from pathlib import Path
+ from urllib.parse import urlparse, unquote
++# Resolve sibling modules even when Python safe-path mode omits the script directory.
++sys.path.insert(0, str(Path(__file__).resolve().parent))
++
+ import requests
+ 
+ from runtime import APP_DIR
+--- a/plugins/ssu-lms/lecture.py
++++ b/plugins/ssu-lms/lecture.py
+@@ -7,6 +7,9 @@
+ import xml.etree.ElementTree as ET
+ from pathlib import Path
+ from urllib.parse import urlparse, unquote
++# Resolve sibling modules even when Python safe-path mode omits the script directory.
++sys.path.insert(0, str(Path(__file__).resolve().parent))
++
+ import requests
+ 
+ from runtime import APP_DIR
+--- a/server.py
++++ b/server.py
+@@ -13,10 +13,14 @@
+ from pathlib import Path
+ from urllib.parse import quote, urljoin, urlparse
+ 
++# Resolve sibling modules even when Python safe-path mode omits the script directory.
++sys.path.insert(0, str(Path(__file__).resolve().parent))
++
+ import requests
+ from mcp.server.fastmcp import FastMCP
+ 
+ 
++from lecture import job_path, save
+ from runtime import APP_DIR, WORKER_OPTIONS, process_running, LOGIN_STATUS, login_status
+ STATE = APP_DIR / "session.json"
+ LOGIN_PID = APP_DIR / "login.pid"
+@@ -286,7 +290,6 @@
+ @mcp.tool()
+ def lecture_transcript(content_id: str, start_if_missing: bool = True) -> dict:
+     """Start local video transcription or read its status and timestamped transcript. No attendance writes."""
+-    from lecture import job_path, save
+     path = job_path(content_id)
+     if path.exists():
+         result = json.loads(path.read_text(encoding="utf-8"))
+@@ -317,7 +320,6 @@
+ @mcp.tool()
+ def retry_lecture_transcript(content_id: str) -> dict:
+     """Retry a failed transcription; refuses to replace a running or completed transcript."""
+-    from lecture import job_path
+     current = lecture_transcript(content_id, False)
+     if current["status"] not in {"failed", "not_started"}:
+         return current
+--- a/plugins/ssu-lms/server.py
++++ b/plugins/ssu-lms/server.py
+@@ -13,10 +13,14 @@
+ from pathlib import Path
+ from urllib.parse import quote, urljoin, urlparse
+ 
++# Resolve sibling modules even when Python safe-path mode omits the script directory.
++sys.path.insert(0, str(Path(__file__).resolve().parent))
++
+ import requests
+ from mcp.server.fastmcp import FastMCP
+ 
+ 
++from lecture import job_path, save
+ from runtime import APP_DIR, WORKER_OPTIONS, process_running, LOGIN_STATUS, login_status
+ STATE = APP_DIR / "session.json"
+ LOGIN_PID = APP_DIR / "login.pid"
+@@ -286,7 +290,6 @@
+ @mcp.tool()
+ def lecture_transcript(content_id: str, start_if_missing: bool = True) -> dict:
+     """Start local video transcription or read its status and timestamped transcript. No attendance writes."""
+-    from lecture import job_path, save
+     path = job_path(content_id)
+     if path.exists():
+         result = json.loads(path.read_text(encoding="utf-8"))
+@@ -317,7 +320,6 @@
+ @mcp.tool()
+ def retry_lecture_transcript(content_id: str) -> dict:
+     """Retry a failed transcription; refuses to replace a running or completed transcript."""
+-    from lecture import job_path
+     current = lecture_transcript(content_id, False)
+     if current["status"] not in {"failed", "not_started"}:
+         return current
+--- a/test_install_windows.py
++++ b/test_install_windows.py
+@@ -16,7 +16,10 @@
+ 
+     def test_direct_python_and_both_manifests(self):
+         with TemporaryDirectory() as directory:
+-            root=Path(directory);(root/'server.py').touch();python=root/'python.exe';python.touch()
++            root=Path(directory)
++            for name in bootstrap.REQUIRED_FILES:
++                (root/name).touch()
++            python=root/'python.exe';python.touch()
+             config=configuration(root,python)
+             configure(root,config)
+             server=config['mcpServers']['ssu-lms']
+--- a/verify_local.py
++++ b/verify_local.py
+@@ -33,6 +33,10 @@
+                 if data is not None:
+                     return data.get('result', data) if isinstance(data, dict) else data
+                 return json.loads(next(c.text for c in result.content if c.type == 'text'))
++            transcript = await call('lecture_transcript', {'content_id': 'package_probe', 'start_if_missing': False})
++            if transcript.get('status') != 'not_started':
++                raise RuntimeError('Unexpected transcription probe state.')
++            print('TRANSCRIPTION_MODULE_OK', flush=True)
+             auth = await call('auth_status', {})
+             print('AUTH', json.dumps(auth, ensure_ascii=True), flush=True)
+             if auth.get('authenticated') is not True or auth.get('verified_live') is not True:
+--- a/plugins/ssu-lms/verify_local.py
++++ b/plugins/ssu-lms/verify_local.py
+@@ -33,6 +33,10 @@
+                 if data is not None:
+                     return data.get('result', data) if isinstance(data, dict) else data
+                 return json.loads(next(c.text for c in result.content if c.type == 'text'))
++            transcript = await call('lecture_transcript', {'content_id': 'package_probe', 'start_if_missing': False})
++            if transcript.get('status') != 'not_started':
++                raise RuntimeError('Unexpected transcription probe state.')
++            print('TRANSCRIPTION_MODULE_OK', flush=True)
+             auth = await call('auth_status', {})
+             print('AUTH', json.dumps(auth, ensure_ascii=True), flush=True)
+             if auth.get('authenticated') is not True or auth.get('verified_live') is not True:
+--- /dev/null
++++ b/test_transcript_package.py
+@@ -0,0 +1,67 @@
++"""Offline regressions for incomplete packages and isolated Python startup."""
++import json
++from pathlib import Path
++import subprocess
++import sys
++import tempfile
++import unittest
++import bootstrap
++
++ROOT = Path(__file__).resolve().parent
++
++class TranscriptPackageTests(unittest.TestCase):
++    def test_missing_lecture_rejected_before_configuration(self):
++        from install_windows import configuration
++        with tempfile.TemporaryDirectory() as directory:
++            root = Path(directory)
++            for name in bootstrap.REQUIRED_FILES:
++                if name != 'lecture.py':
++                    (root / name).touch()
++            with self.assertRaisesRegex(ValueError, 'lecture.py'):
++                configuration(root, sys.executable)
++            self.assertFalse((root / '.mcp.json').exists())
++
++    def test_complete_package(self):
++        bootstrap.validate_package(ROOT)
++        bootstrap.validate_package(ROOT / 'plugins/ssu-lms')
++
++    def test_safe_path_loads_transcription_without_starting_worker(self):
++        # Stub only third-party imports; exercise real server, lecture and runtime files.
++        probe = '''
++import json, runpy, sys, tempfile, types
++from pathlib import Path
++requests = types.ModuleType('requests')
++requests.Session = type('Session', (), {})
++requests.Response = type('Response', (), {})
++requests.RequestException = type('RequestException', (Exception,), {})
++sys.modules['requests'] = requests
++fastmcp = types.ModuleType('mcp.server.fastmcp')
++class FastMCP:
++    def __init__(self, *args): pass
++    def tool(self): return lambda function: function
++fastmcp.FastMCP = FastMCP
++sys.modules['mcp'] = types.ModuleType('mcp')
++sys.modules['mcp.server'] = types.ModuleType('mcp.server')
++sys.modules['mcp.server.fastmcp'] = fastmcp
++server = runpy.run_path(sys.argv[1], run_name='package_test')
++import lecture
++assert Path(lecture.__file__).resolve().parent == Path(sys.argv[1]).resolve().parent
++with tempfile.TemporaryDirectory() as directory:
++    lecture.ROOT = Path(directory)
++    assert server['lecture_transcript']('probe', False) == {'status': 'not_started'}
++    assert not list(Path(directory).iterdir())
++print('TRANSCRIPTION_MODULE_OK')
++'''
++        for root in (ROOT, ROOT / 'plugins/ssu-lms'):
++            with self.subTest(root=root), tempfile.TemporaryDirectory() as cwd:
++                result = subprocess.run([sys.executable, '-I', '-c', probe, str(root/'server.py')],
++                                        cwd=cwd, capture_output=True, text=True, timeout=30)
++                self.assertEqual(result.returncode, 0, result.stderr)
++                self.assertIn('TRANSCRIPTION_MODULE_OK', result.stdout)
++
++    def test_changed_runtime_copies_match(self):
++        for name in ('server.py', 'lecture.py', 'bootstrap.py', 'install_windows.py', 'verify_local.py'):
++            self.assertEqual((ROOT/name).read_bytes(), (ROOT/'plugins/ssu-lms'/name).read_bytes(), name)
++
++if __name__ == '__main__':
++    unittest.main()
