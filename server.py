@@ -236,7 +236,7 @@ def auth_status() -> dict:
     """Check whether a usable LMS browser session was captured locally."""
     try:
         list_courses()
-        return {"authenticated": True, "verified_live": True, "server_version": "0.3.2"}
+        return {"authenticated": True, "verified_live": True, "server_version": "0.3.3"}
     except requests.HTTPError as error:
         status = error.response.status_code if error.response is not None else None
         return {"authenticated": None, "verified_live": False, "http_status": status,
